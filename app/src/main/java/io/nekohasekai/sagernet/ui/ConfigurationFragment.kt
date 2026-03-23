@@ -614,12 +614,37 @@ class ConfigurationFragment @JvmOverloads constructor(
 
     inner class TestDialog {
         val binding = LayoutProgressListBinding.inflate(layoutInflater)
+
+        // ===== ДОБАВЛЕНО: Блокировка сна (WakeLock) =====
+        private val wakeLock = try {
+            val pm = requireContext().getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
+            // PARTIAL_WAKE_LOCK заставляет процессор работать даже при выключенном экране
+            val wl = pm.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "NekoBox:TestWakeLock")
+            wl.acquire(30 * 60 * 1000L) // Защита от вечного зависания: максимум 30 минут
+            wl
+        } catch (e: Exception) {
+            null
+        }
+
+        private fun releaseWakeLock() {
+            try {
+                if (wakeLock?.isHeld == true) {
+                    wakeLock.release()
+                }
+            } catch (e: Exception) {}
+        }
+        // ================================================
+
         val builder = MaterialAlertDialogBuilder(requireContext()).setView(binding.root)
             .setPositiveButton(R.string.minimize) { _, _ ->
                 minimize()
             }
             .setNegativeButton(android.R.string.cancel) { _, _ ->
                 cancel()
+            }
+            .setOnDismissListener {
+                // Гарантированно отпускаем блокировку, когда тест завершен или отменен
+                releaseWakeLock()
             }
             .setCancelable(false)
 
@@ -649,8 +674,6 @@ class ConfigurationFragment @JvmOverloads constructor(
                 if (status >= 1) return@runOnMainDispatcher
                 if (!isAdded) return@runOnMainDispatcher
 
-                // refresh dialog
-
                 var profileStatusText: String? = null
                 var profileStatusColor = 0
 
@@ -659,22 +682,18 @@ class ConfigurationFragment @JvmOverloads constructor(
                         profileStatusText = profile.error
                         profileStatusColor = context.getColorAttr(android.R.attr.textColorSecondary)
                     }
-
                     0 -> {
                         profileStatusText = getString(R.string.connection_test_testing)
                         profileStatusColor = context.getColorAttr(android.R.attr.textColorSecondary)
                     }
-
                     1 -> {
                         profileStatusText = getString(R.string.available, profile.ping)
                         profileStatusColor = context.getColour(R.color.material_green_500)
                     }
-
                     2 -> {
                         profileStatusText = profile.error
                         profileStatusColor = context.getColour(R.color.material_red_500)
                     }
-
                     3 -> {
                         val err = profile.error ?: ""
                         val msg = Protocols.genFriendlyMsg(err)
@@ -705,7 +724,6 @@ class ConfigurationFragment @JvmOverloads constructor(
             }
         }
     }
-
     @OptIn(DelicateCoroutinesApi::class)
     @Suppress("EXPERIMENTAL_API_USAGE")
     fun pingTest(icmpPing: Boolean) {
