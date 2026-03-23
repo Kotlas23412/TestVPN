@@ -9,6 +9,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Fix line endings
+        run: |
+          find . -name "*.sh" -exec sed -i 's/\r$//' {} +
+          sed -i 's/\r$//' run
+          chmod +x run
+          find . -name "*.sh" -exec chmod +x {} +
       - name: Golang Status
         run: find buildScript libcore/*.sh | xargs cat | sha1sum > golang_status
       - name: Libcore Status
@@ -36,6 +42,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Fix line endings
+        run: |
+          find . -name "*.sh" -exec sed -i 's/\r$//' {} +
+          sed -i 's/\r$//' run
+          chmod +x run
+          find . -name "*.sh" -exec chmod +x {} +
       - name: Golang Status
         run: find buildScript libcore/*.sh | xargs cat | sha1sum > golang_status
       - name: Libcore Status
