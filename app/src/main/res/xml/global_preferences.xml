@@ -205,12 +205,17 @@
             app:summary="@string/allow_access_sum"
             app:title="@string/allow_access" />
     </PreferenceCategory>
-    <Preference
-        android:key="github_export_settings"
-        android:title="@string/github_export_title"
-        android:icon="@drawable/ic_file_file_upload"
-        android:fragment="io.nekohasekai.sagernet.ui.GitHubExportSettingsFragment" />
+
+    <!-- ВОТ ЗДЕСЬ ПРАВИЛЬНО (ВНУТРИ КАТЕГОРИИ) -->
     <PreferenceCategory app:title="@string/cag_misc">
+
+        <!-- НАША КНОПКА GITHUB -->
+        <Preference
+            android:key="github_export_settings"
+            android:title="@string/github_export_title"
+            android:icon="@drawable/ic_file_file_upload"
+            android:fragment="io.nekohasekai.sagernet.ui.GitHubExportSettingsFragment" />
+
         <moe.matsuri.nb4a.ui.UrlTestPreference
             app:defaultValue="http://cp.cloudflare.com/"
             app:icon="@drawable/ic_baseline_cast_connected_24"
