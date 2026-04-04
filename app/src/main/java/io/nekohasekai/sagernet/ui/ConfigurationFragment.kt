@@ -521,7 +521,7 @@ class ConfigurationFragment @JvmOverloads constructor(
                                     }
                                     runOnDefaultDispatcher {
                                         for (profile in toClear) {
-                                            ProfileManager.deleteProfile2(
+                                            ProfileManager.deleteProfile(
                                                 profile.groupId, profile.id
                                             )
                                         }
@@ -573,7 +573,7 @@ class ConfigurationFragment @JvmOverloads constructor(
                                     }
                                     runOnDefaultDispatcher {
                                         for (profile in toClear) {
-                                            ProfileManager.deleteProfile2(
+                                            ProfileManager.deleteProfile(
                                                 profile.groupId, profile.id
                                             )
                                         }
@@ -700,120 +700,131 @@ class ConfigurationFragment @JvmOverloads constructor(
             }
         }
     }
-
     @OptIn(DelicateCoroutinesApi::class)
     @Suppress("EXPERIMENTAL_API_USAGE")
     fun pingTest(icmpPing: Boolean) {
-        if (DataStore.runningTest) return else DataStore.runningTest = true
+        if (DataStore.runningTest) {
+            snackbar("Тестирование уже запущено! Дождитесь окончания.").show()
+            return
+        } else DataStore.runningTest = true
         val test = TestDialog()
         val dialog = test.builder.show()
         val testJobs = mutableListOf<Job>()
         val group = DataStore.currentGroup()
 
         val mainJob = runOnDefaultDispatcher {
-            val profilesList = SagerDatabase.proxyDao.getByGroup(group.id).filter {
-                if (icmpPing) {
-                    if (it.requireBean().canICMPing()) {
-                        return@filter true
+            try {
+                val profilesList = SagerDatabase.proxyDao.getByGroup(group.id).filter {
+                    if (icmpPing) {
+                        if (it.requireBean().canICMPing()) {
+                            return@filter true
+                        }
+                    } else {
+                        if (it.requireBean().canTCPing()) {
+                            return@filter true
+                        }
                     }
-                } else {
-                    if (it.requireBean().canTCPing()) {
-                        return@filter true
-                    }
+                    return@filter false
                 }
-                return@filter false
-            }
-            test.proxyN = profilesList.size
-            val profiles = ConcurrentLinkedQueue(profilesList)
-            repeat(DataStore.connectionTestConcurrent) {
-                testJobs.add(launch(Dispatchers.IO) {
-                    while (isActive) {
-                        val profile = profiles.poll() ?: break
+                test.proxyN = profilesList.size
+                val profiles = ConcurrentLinkedQueue(profilesList)
+                repeat(DataStore.connectionTestConcurrent) {
+                    testJobs.add(launch(Dispatchers.IO) {
+                        while (isActive) {
+                            val profile = profiles.poll() ?: break
 
-                        profile.status = 0
-                        var address = profile.requireBean().serverAddress
-                        if (!address.isIpAddress()) {
-                            try {
-                                SagerNet.underlyingNetwork!!.getAllByName(address).apply {
-                                    if (isNotEmpty()) {
-                                        address = this[0].hostAddress
-                                    }
-                                }
-                            } catch (ignored: UnknownHostException) {
-                            }
-                        }
-                        if (!isActive) break
-                        if (!address.isIpAddress()) {
-                            profile.status = 2
-                            profile.error = app.getString(R.string.connection_test_domain_not_found)
-                            test.update(profile)
-                            continue
-                        }
-                        try {
-                            if (icmpPing) {
-                                // removed
-                            } else {
-                                val socket =
-                                    SagerNet.underlyingNetwork?.socketFactory?.createSocket()
-                                        ?: Socket()
+                            profile.status = 0
+                            var address = profile.requireBean().serverAddress
+                            if (!address.isIpAddress()) {
                                 try {
-                                    socket.soTimeout = 3000
-                                    socket.bind(InetSocketAddress(0))
-                                    val start = SystemClock.elapsedRealtime()
-                                    socket.connect(
-                                        InetSocketAddress(
-                                            address, profile.requireBean().serverPort
-                                        ), 3000
-                                    )
-                                    if (!isActive) break
-                                    profile.status = 1
-                                    profile.ping = (SystemClock.elapsedRealtime() - start).toInt()
-                                    test.update(profile)
-                                } finally {
-                                    socket.closeQuietly()
+                                    SagerNet.underlyingNetwork!!.getAllByName(address).apply {
+                                        if (isNotEmpty()) {
+                                            address = this[0].hostAddress
+                                        }
+                                    }
+                                } catch (ignored: UnknownHostException) {
                                 }
                             }
-                        } catch (e: Exception) {
                             if (!isActive) break
-                            val message = e.readableMessage
-
-                            if (icmpPing) {
+                            if (!address.isIpAddress()) {
                                 profile.status = 2
-                                profile.error = getString(R.string.connection_test_unreachable)
-                            } else {
-                                profile.status = 2
-                                when {
-                                    !message.contains("failed:") -> profile.error =
-                                        getString(R.string.connection_test_timeout)
+                                profile.error = app.getString(R.string.connection_test_domain_not_found)
+                                test.update(profile)
+                                continue
+                            }
+                            try {
+                                if (icmpPing) {
+                                    // removed
+                                } else {
+                                    val socket =
+                                        SagerNet.underlyingNetwork?.socketFactory?.createSocket()
+                                            ?: Socket()
+                                    try {
+                                        socket.soTimeout = 3000
+                                        socket.bind(InetSocketAddress(0))
+                                        val start = SystemClock.elapsedRealtime()
+                                        socket.connect(
+                                            InetSocketAddress(
+                                                address, profile.requireBean().serverPort
+                                            ), 3000
+                                        )
+                                        if (!isActive) break
+                                        profile.status = 1
+                                        profile.ping = (SystemClock.elapsedRealtime() - start).toInt()
+                                        test.update(profile)
+                                    } finally {
+                                        socket.closeQuietly()
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                if (!isActive) break
+                                val message = e.readableMessage
 
-                                    else -> when {
-                                        message.contains("ECONNREFUSED") -> {
-                                            profile.error =
-                                                getString(R.string.connection_test_refused)
-                                        }
+                                if (icmpPing) {
+                                    profile.status = 2
+                                    profile.error = getString(R.string.connection_test_unreachable)
+                                } else {
+                                    profile.status = 2
+                                    when {
+                                        !message.contains("failed:") -> profile.error =
+                                            getString(R.string.connection_test_timeout)
 
-                                        message.contains("ENETUNREACH") -> {
-                                            profile.error =
-                                                getString(R.string.connection_test_unreachable)
-                                        }
+                                        else -> when {
+                                            message.contains("ECONNREFUSED") -> {
+                                                profile.error =
+                                                    getString(R.string.connection_test_refused)
+                                            }
 
-                                        else -> {
-                                            profile.status = 3
-                                            profile.error = message
+                                            message.contains("ENETUNREACH") -> {
+                                                profile.error =
+                                                    getString(R.string.connection_test_unreachable)
+                                            }
+
+                                            else -> {
+                                                profile.status = 3
+                                                profile.error = message
+                                            }
                                         }
                                     }
                                 }
+                                test.update(profile)
                             }
-                            test.update(profile)
                         }
-                    }
-                })
-            }
+                    })
+                }
 
-            testJobs.joinAll()
+                testJobs.joinAll()
 
-            runOnMainDispatcher {
-                test.cancel()
+                runOnMainDispatcher {
+                    test.cancel()
+                }
+            } catch (e: Exception) {
+                Logs.w(e)
+                DataStore.runningTest = false
+                onMainDispatcher {
+                    if (dialog.isShowing) dialog.dismiss()
+                    snackbar("Ошибка теста: ${e.readableMessage}").show()
+                }
             }
         }
         test.cancel = {
@@ -845,16 +856,21 @@ class ConfigurationFragment @JvmOverloads constructor(
 
     @OptIn(DelicateCoroutinesApi::class)
     fun urlTest() {
-        if (DataStore.runningTest) return else DataStore.runningTest = true
+        if (DataStore.runningTest) {
+            snackbar("Тестирование уже запущено! Дождитесь окончания.").show()
+            return
+        } else DataStore.runningTest = true
         val test = TestDialog()
         val dialog = test.builder.show()
         val testJobs = mutableListOf<Job>()
         val group = DataStore.currentGroup()
 
         val mainJob = runOnDefaultDispatcher {
-            val profilesList = SagerDatabase.proxyDao.getByGroup(group.id)
-            test.proxyN = profilesList.size
-            val profiles = ConcurrentLinkedQueue(profilesList)
+            try {
+                val profilesList = SagerDatabase.proxyDao.getByGroup(group.id)
+                test.proxyN = profilesList.size
+                val profiles = ConcurrentLinkedQueue(profilesList)
+
             repeat(DataStore.connectionTestConcurrent) {
                 testJobs.add(launch(Dispatchers.IO) {
                     val urlTest = UrlTest() // note: this is NOT in bg process
@@ -883,6 +899,14 @@ class ConfigurationFragment @JvmOverloads constructor(
 
             runOnMainDispatcher {
                 test.cancel()
+            }
+            } catch (e: Exception) {
+                Logs.w(e)
+                DataStore.runningTest = false
+                onMainDispatcher {
+                    if (dialog.isShowing) dialog.dismiss()
+                    snackbar("Ошибка теста: ${e.readableMessage}").show()
+                }
             }
         }
         test.cancel = {
@@ -914,16 +938,20 @@ class ConfigurationFragment @JvmOverloads constructor(
 
     @OptIn(DelicateCoroutinesApi::class)
     fun fullHttpsTest() {
-        if (DataStore.runningTest) return else DataStore.runningTest = true
+        if (DataStore.runningTest) {
+            snackbar("Тестирование уже запущено! Дождитесь окончания.").show()
+            return
+        } else DataStore.runningTest = true
         val test = TestDialog()
         val dialog = test.builder.show()
         val testJobs = mutableListOf<Job>()
         val group = DataStore.currentGroup()
 
         val mainJob = runOnDefaultDispatcher {
-            val profilesList = SagerDatabase.proxyDao.getByGroup(group.id)
-            test.proxyN = profilesList.size
-            val profiles = ConcurrentLinkedQueue(profilesList)
+            try {
+                val profilesList = SagerDatabase.proxyDao.getByGroup(group.id)
+                test.proxyN = profilesList.size
+                val profiles = ConcurrentLinkedQueue(profilesList)
             repeat(DataStore.connectionTestConcurrent) {
                 testJobs.add(launch(Dispatchers.IO) {
                     while (isActive) {
@@ -962,6 +990,14 @@ class ConfigurationFragment @JvmOverloads constructor(
 
             runOnMainDispatcher {
                 test.cancel()
+            }
+            } catch (e: Exception) {
+                Logs.w(e)
+                DataStore.runningTest = false
+                onMainDispatcher {
+                    if (dialog.isShowing) dialog.dismiss()
+                    snackbar("Ошибка HTTPS-теста: ${e.readableMessage}").show()
+                }
             }
         }
         test.cancel = {
@@ -1848,102 +1884,117 @@ class ConfigurationFragment @JvmOverloads constructor(
         )
 
         val mainJob = runOnDefaultDispatcher {
-            val profilesList = SagerDatabase.proxyDao.getByGroup(group.id)
-            test.proxyN = profilesList.size
-            val profiles = ConcurrentLinkedQueue(profilesList)
+            try {
+                val profilesList = SagerDatabase.proxyDao.getByGroup(group.id)
+                test.proxyN = profilesList.size
+                val profiles = ConcurrentLinkedQueue(profilesList)
 
-            // 2. Тестируем все прокси в группе
-            repeat(DataStore.connectionTestConcurrent) {
-                testJobs.add(launch(Dispatchers.IO) {
-                    val urlTest = if (!useHttpsTest) UrlTest() else null
+                // 2. Тестируем все прокси в группе
+                repeat(DataStore.connectionTestConcurrent) {
+                    testJobs.add(launch(Dispatchers.IO) {
+                        val urlTest = if (!useHttpsTest) UrlTest() else null
 
-                    while (isActive) {
-                        val profile = profiles.poll() ?: break
-                        profile.status = 0
+                        while (isActive) {
+                            val profile = profiles.poll() ?: break
+                            profile.status = 0
 
-                        try {
-                            if (useHttpsTest) {
-                                // Хардкорный HTTPS тест
-                                val result = FullTestInstance(profile, timeout = 15000, minOk = 2).doTest()
-                                if (result.success) {
-                                    profile.status = 1
-                                    profile.ping = result.bestLatencyMs.toInt()
-                                    profile.error = null
+                            try {
+                                if (useHttpsTest) {
+                                    // Хардкорный HTTPS тест
+                                    val result =
+                                        FullTestInstance(profile, timeout = 15000, minOk = 2).doTest()
+                                    if (result.success) {
+                                        profile.status = 1
+                                        profile.ping = result.bestLatencyMs.toInt()
+                                        profile.error = null
+                                    } else {
+                                        profile.status = 3
+                                        profile.error = result.error ?: "HTTPS failed"
+                                    }
                                 } else {
-                                    profile.status = 3
-                                    profile.error = result.error ?: "HTTPS failed"
+                                    // Обычный URL тест
+                                    val result = urlTest!!.doTest(profile)
+                                    profile.status = 1
+                                    profile.ping = result
+                                    profile.error = null
                                 }
-                            } else {
-                                // Обычный URL тест
-                                val result = urlTest!!.doTest(profile)
-                                profile.status = 1
-                                profile.ping = result
-                                profile.error = null
+                            } catch (e: Exception) {
+                                profile.status = 3
+                                profile.error = e.readableMessage
                             }
-                        } catch (e: Exception) {
-                            profile.status = 3
-                            profile.error = e.readableMessage
+
+                            test.update(profile)
                         }
+                    })
+                }
 
-                        test.update(profile)
-                    }
-                })
-            }
+                // Ждем завершения всех тестов
+                testJobs.joinAll()
 
-            // Ждем завершения всех тестов
-            testJobs.joinAll()
+                // 3. Отбираем лучшие прокси
+                val limit = DataStore.githubExportLimit
+                val testedProfiles = test.results.toList()
 
-            // 3. Отбираем лучшие прокси
-            val limit = DataStore.githubExportLimit
-            val testedProfiles = test.results.toList()
+                // Сортируем: только успешные (status == 1), сортировка по пингу (от меньшего к большему)
+                val bestProxies = testedProfiles
+                    .filter { it.status == 1 }
+                    .sortedBy { it.ping }
+                    .take(limit)
 
-            // Сортируем: только успешные (status == 1), сортировка по пингу (от меньшего к большему)
-            val bestProxies = testedProfiles
-                .filter { it.status == 1 }
-                .sortedBy { it.ping }
-                .take(limit)
-
-            runOnMainDispatcher {
-                test.dialogStatus.set(2)
-                dialog.dismiss()
+                onMainDispatcher {
+                    test.dialogStatus.set(2)
+                    dialog.dismiss()
+                }
 
                 if (bestProxies.isEmpty()) {
                     DataStore.runningTest = false
-                    MaterialAlertDialogBuilder(requireContext())
-                        .setTitle("Экспорт отменён")
-                        .setMessage("Нет ни одного рабочего прокси для экспорта!")
-                        .setPositiveButton(android.R.string.ok, null)
-                        .show()
-                    return@runOnMainDispatcher
-                }
-
-                // 4. Отправляем на GitHub!
-                val progressDialog = MaterialAlertDialogBuilder(requireContext())
-                    .setTitle("Выгрузка на GitHub")
-                    .setMessage("Отправляем ${bestProxies.size} лучших прокси...")
-                    .setCancelable(false)
-                    .show()
-
-                runOnDefaultDispatcher {
-                    // Обновляем статусы в базе данных локально
-                    test.results.forEach {
-                        try { ProfileManager.updateProfile(it) } catch (e: Exception) { Logs.w(e) }
-                    }
-                    GroupManager.postReload(DataStore.currentGroupId())
-
-                    // Делаем экспорт
-                    val result = GitHubExporter.exportGroup(group.displayName(), bestProxies)
-
-                    DataStore.runningTest = false
-
-                    runOnMainDispatcher {
-                        progressDialog.dismiss()
+                    onMainDispatcher {
                         MaterialAlertDialogBuilder(requireContext())
-                            .setTitle(if (result.success) "Успех!" else "Ошибка выгрузки")
-                            .setMessage(result.message)
+                            .setTitle("Экспорт отменён")
+                            .setMessage("Нет ни одного рабочего прокси для экспорта!")
                             .setPositiveButton(android.R.string.ok, null)
                             .show()
                     }
+                    return@runOnDefaultDispatcher
+                }
+
+                // 4. Отправляем на GitHub!
+                val progressDialog = onMainDispatcher {
+                    MaterialAlertDialogBuilder(requireContext())
+                        .setTitle("Выгрузка на GitHub")
+                        .setMessage("Отправляем ${bestProxies.size} лучших прокси...")
+                        .setCancelable(false)
+                        .show()
+                }
+
+                // Обновляем статусы в базе данных локально
+                test.results.forEach {
+                    try {
+                        ProfileManager.updateProfile(it)
+                    } catch (e: Exception) {
+                        Logs.w(e)
+                    }
+                }
+                GroupManager.postReload(DataStore.currentGroupId())
+
+                // Делаем экспорт
+                val result = GitHubExporter.exportGroup(group.displayName(), bestProxies)
+                DataStore.runningTest = false
+
+                onMainDispatcher {
+                    progressDialog.dismiss()
+                    MaterialAlertDialogBuilder(requireContext())
+                        .setTitle(if (result.success) "Успех!" else "Ошибка выгрузки")
+                        .setMessage(result.message)
+                        .setPositiveButton(android.R.string.ok, null)
+                        .show()
+                }
+            } catch (e: Exception) {
+                Logs.w(e)
+                DataStore.runningTest = false
+                onMainDispatcher {
+                    if (dialog.isShowing) dialog.dismiss()
+                    snackbar("AutoPilot ошибка: ${e.readableMessage}").show()
                 }
             }
         }
@@ -1961,6 +2012,142 @@ class ConfigurationFragment @JvmOverloads constructor(
         test.minimize = {
             test.dialogStatus.set(1)
             dialog.hide()
+        }
+    }
+    fun runGithubExportSelected() {
+        val group = DataStore.currentGroup()
+
+        runOnDefaultDispatcher {
+            // Получаем все прокси из текущей группы
+            val allProxies = SagerDatabase.proxyDao.getByGroup(group.id)
+                .sortedBy { it.displayName() } // Сортируем по имени для удобства
+
+            if (allProxies.isEmpty()) {
+                onMainDispatcher {
+                    snackbar("В этой группе нет прокси!").show()
+                }
+                return@runOnDefaultDispatcher
+            }
+
+            // Массивы для диалога
+            val proxyNames = allProxies.map { it.displayName() }.toTypedArray()
+            val checkedItems = BooleanArray(allProxies.size) { false }
+            val selectedProxies = mutableListOf<ProxyEntity>()
+
+            onMainDispatcher {
+                MaterialAlertDialogBuilder(requireContext())
+                    .setTitle("Выберите прокси для экспорта")
+                    .setMultiChoiceItems(proxyNames, checkedItems) { _, which, isChecked ->
+                        checkedItems[which] = isChecked
+                    }
+                    .setPositiveButton("Экспорт") { _, _ ->
+                        // Собираем выбранные
+                        for (i in checkedItems.indices) {
+                            if (checkedItems[i]) {
+                                selectedProxies.add(allProxies[i])
+                            }
+                        }
+
+                        if (selectedProxies.isEmpty()) {
+                            snackbar("Вы ничего не выбрали!").show()
+                        } else {
+                            exportMultipleGroups(
+                                group.displayName(),
+                                selectedProxies,
+                                "Отправляем ${selectedProxies.size} прокси..."
+                            )
+                        }
+                    }
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show()
+            }
+        }
+    }
+    fun runGithubExportByCountry() {
+        val group = DataStore.currentGroup()
+
+        runOnDefaultDispatcher {
+            val allProxies = SagerDatabase.proxyDao.getByGroup(group.id)
+
+            if (allProxies.isEmpty()) {
+                onMainDispatcher { snackbar("В этой группе нет прокси!").show() }
+                return@runOnDefaultDispatcher
+            }
+
+            // Группируем прокси по странам.
+            // Мы ищем Эмодзи-флаги (например 🇩🇪) или буквенные коды (DE, US) в названии
+            val countryMap = mutableMapOf<String, MutableList<ProxyEntity>>()
+
+            // Регулярное выражение для поиска эмодзи-флагов
+            val flagRegex = Regex("[\uD83C][\uDDE6-\uDDFF][\uD83C][\uDDE6-\uDDFF]")
+
+            for (proxy in allProxies) {
+                val name = proxy.displayName()
+
+                // Пытаемся найти флаг
+                val flagMatch = flagRegex.find(name)
+                val countryKey = if (flagMatch != null) {
+                    // Если есть флаг — берем его и следующее слово (если есть)
+                    val flag = flagMatch.value
+                    // Попытка выцепить слово после флага (например "Германия")
+                    val afterFlag = name.substringAfter(flag).trim().split(" ").firstOrNull()?.replace(Regex("[^\\p{L}]"), "") ?: ""
+                    if (afterFlag.length > 2) "$flag $afterFlag" else flag
+                } else {
+                    // Если флага нет, берем первое длинное слово в надежде, что это страна
+                    val words = name.split(" ", "-", "_")
+                    val possibleCountry = words.find { it.length > 2 && !it.contains(Regex("\\d")) }
+                    possibleCountry ?: "Неизвестно"
+                }
+
+                if (!countryMap.containsKey(countryKey)) {
+                    countryMap[countryKey] = mutableListOf()
+                }
+                countryMap[countryKey]?.add(proxy)
+            }
+
+            val countryNames = countryMap.keys.toTypedArray()
+
+            onMainDispatcher {
+                MaterialAlertDialogBuilder(requireContext())
+                    .setTitle("Выберите страну для экспорта")
+                    .setItems(countryNames) { _, which ->
+                        val selectedCountry = countryNames[which]
+                        val proxiesToExport = countryMap[selectedCountry] ?: return@setItems
+
+                        val blockName = "${group.displayName()} - $selectedCountry"
+                        exportMultipleGroups(
+                            blockName,
+                            proxiesToExport,
+                            "Отправляем ${proxiesToExport.size} прокси ($selectedCountry)..."
+                        )
+                    }
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show()
+            }
+        }
+    }
+
+    private fun exportMultipleGroups(
+        blockName: String,
+        proxiesToExport: List<ProxyEntity>,
+        progressMessage: String
+    ) {
+        val progressDialog = MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Выгрузка на GitHub")
+            .setMessage(progressMessage)
+            .setCancelable(false)
+            .show()
+
+        runOnDefaultDispatcher {
+            val result = GitHubExporter.exportGroup(blockName, proxiesToExport)
+            runOnMainDispatcher {
+                progressDialog.dismiss()
+                MaterialAlertDialogBuilder(requireContext())
+                    .setTitle(if (result.success) "Успех!" else "Ошибка выгрузки")
+                    .setMessage(result.message)
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show()
+            }
         }
     }
 }
