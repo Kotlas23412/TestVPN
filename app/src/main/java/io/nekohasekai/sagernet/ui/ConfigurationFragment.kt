@@ -875,10 +875,12 @@ class ConfigurationFragment @JvmOverloads constructor(
         val group = DataStore.currentGroup()
 
         val mainJob = runOnDefaultDispatcher {
+
             try {
                 val profilesList = SagerDatabase.proxyDao.getByGroup(group.id)
                 test.proxyN = profilesList.size
                 val profiles = ConcurrentLinkedQueue(profilesList)
+
             repeat(DataStore.connectionTestConcurrent) {
                 testJobs.add(launch(Dispatchers.IO) {
                     val urlTest = UrlTest() // note: this is NOT in bg process
