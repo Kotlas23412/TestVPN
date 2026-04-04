@@ -40,7 +40,6 @@ import io.nekohasekai.sagernet.GroupOrder
 import io.nekohasekai.sagernet.GroupType
 import io.nekohasekai.sagernet.Key
 import io.nekohasekai.sagernet.R
-import io.nekohasekai.sagernet.R.id.action_github_manager
 import io.nekohasekai.sagernet.SagerNet
 import io.nekohasekai.sagernet.aidl.TrafficData
 import io.nekohasekai.sagernet.bg.BaseService
@@ -118,15 +117,6 @@ import java.util.zip.ZipInputStream
 import io.nekohasekai.sagernet.bg.proto.FullTestInstance
 import io.nekohasekai.sagernet.bg.proto.FullTestResult
 import io.nekohasekai.sagernet.utils.GitHubExporter
-import io.nekohasekai.sagernet.bg.AutoPilotService
-
-// ИМПОРТЫ ДЛЯ ЖЕСТКОГО ТЕСТА
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
-import java.util.concurrent.TimeUnit
-import java.net.Proxy
 
 class ConfigurationFragment @JvmOverloads constructor(
     val select: Boolean = false, val selectedItem: ProxyEntity? = null, val titleRes: Int = 0
@@ -430,10 +420,6 @@ class ConfigurationFragment @JvmOverloads constructor(
                 startActivity(Intent(requireActivity(), HysteriaSettingsActivity::class.java))
             }
 
-            R.id.action_github_manager -> {
-                startActivity(Intent(requireContext(), GitHubManagerActivity::class.java))
-            }
-
             R.id.action_new_tuic -> {
                 startActivity(Intent(requireActivity(), TuicSettingsActivity::class.java))
             }
@@ -457,21 +443,14 @@ class ConfigurationFragment @JvmOverloads constructor(
             R.id.action_new_config -> {
                 startActivity(Intent(requireActivity(), ConfigSettingActivity::class.java))
             }
-
             R.id.action_github_export_selected -> {
                 runGithubExportSelected()
             }
-
             R.id.action_github_export_country -> {
                 runGithubExportByCountry()
             }
-
             R.id.action_new_chain -> {
                 startActivity(Intent(requireActivity(), ChainSettingsActivity::class.java))
-            }
-
-            R.id.action_autopilot -> {
-                runAutoPilotDialog()
             }
 
             R.id.action_update_subscription -> {
@@ -547,7 +526,7 @@ class ConfigurationFragment @JvmOverloads constructor(
                                     }
                                     runOnDefaultDispatcher {
                                         for (profile in toClear) {
-                                            ProfileManager.deleteProfile(
+                                            ProfileManager.deleteProfile2(
                                                 profile.groupId, profile.id
                                             )
                                         }
@@ -599,7 +578,7 @@ class ConfigurationFragment @JvmOverloads constructor(
                                     }
                                     runOnDefaultDispatcher {
                                         for (profile in toClear) {
-                                            ProfileManager.deleteProfile(
+                                            ProfileManager.deleteProfile2(
                                                 profile.groupId, profile.id
                                             )
                                         }
@@ -619,22 +598,15 @@ class ConfigurationFragment @JvmOverloads constructor(
             R.id.action_connection_url_test -> {
                 urlTest()
             }
-
             R.id.action_full_https_test -> {
                 fullHttpsTest()
             }
-
             R.id.action_github_auto_url -> {
                 runGithubAutoExport(useHttpsTest = false)
             }
 
             R.id.action_github_auto_https -> {
                 runGithubAutoExport(useHttpsTest = true)
-            }
-
-            // НОВАЯ КНОПКА ЖЕСТКОГО ТЕСТА
-            R.id.action_github_auto_hardcore -> {
-                runGithubHardcoreExport()
             }
         }
         return true
@@ -645,11 +617,9 @@ class ConfigurationFragment @JvmOverloads constructor(
 
         // ===== ДОБАВЛЕНО: Блокировка сна (WakeLock) =====
         private val wakeLock = try {
-            val pm =
-                requireContext().getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
+            val pm = requireContext().getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
             // PARTIAL_WAKE_LOCK заставляет процессор работать даже при выключенном экране
-            val wl =
-                pm.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "NekoBox:TestWakeLock")
+            val wl = pm.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "NekoBox:TestWakeLock")
             wl.acquire(30 * 60 * 1000L) // Защита от вечного зависания: максимум 30 минут
             wl
         } catch (e: Exception) {
@@ -661,8 +631,7 @@ class ConfigurationFragment @JvmOverloads constructor(
                 if (wakeLock?.isHeld == true) {
                     wakeLock.release()
                 }
-            } catch (e: Exception) {
-            }
+            } catch (e: Exception) {}
         }
         // ================================================
 
@@ -713,22 +682,18 @@ class ConfigurationFragment @JvmOverloads constructor(
                         profileStatusText = profile.error
                         profileStatusColor = context.getColorAttr(android.R.attr.textColorSecondary)
                     }
-
                     0 -> {
                         profileStatusText = getString(R.string.connection_test_testing)
                         profileStatusColor = context.getColorAttr(android.R.attr.textColorSecondary)
                     }
-
                     1 -> {
                         profileStatusText = getString(R.string.available, profile.ping)
                         profileStatusColor = context.getColour(R.color.material_green_500)
                     }
-
                     2 -> {
                         profileStatusText = profile.error
                         profileStatusColor = context.getColour(R.color.material_red_500)
                     }
-
                     3 -> {
                         val err = profile.error ?: ""
                         val msg = Protocols.genFriendlyMsg(err)
@@ -759,7 +724,6 @@ class ConfigurationFragment @JvmOverloads constructor(
             }
         }
     }
-
     @OptIn(DelicateCoroutinesApi::class)
     @Suppress("EXPERIMENTAL_API_USAGE")
     fun pingTest(icmpPing: Boolean) {
@@ -1049,7 +1013,6 @@ class ConfigurationFragment @JvmOverloads constructor(
             dialog.hide()
         }
     }
-
     inner class GroupPagerAdapter : FragmentStateAdapter(this),
         ProfileManager.Listener,
         GroupManager.Listener {
@@ -1888,7 +1851,6 @@ class ConfigurationFragment @JvmOverloads constructor(
         searchView.onActionViewCollapsed()
         searchView.clearFocus()
     }
-
     @OptIn(DelicateCoroutinesApi::class)
     fun runGithubAutoExport(useHttpsTest: Boolean) {
         if (DataStore.runningTest) {
@@ -1925,8 +1887,7 @@ class ConfigurationFragment @JvmOverloads constructor(
                         try {
                             if (useHttpsTest) {
                                 // Хардкорный HTTPS тест
-                                val result =
-                                    FullTestInstance(profile, timeout = 15000, minOk = 2).doTest()
+                                val result = FullTestInstance(profile, timeout = 15000, minOk = 2).doTest()
                                 if (result.success) {
                                     profile.status = 1
                                     profile.ping = result.bestLatencyMs.toInt()
@@ -1966,13 +1927,12 @@ class ConfigurationFragment @JvmOverloads constructor(
                 .take(limit)
 
             runOnMainDispatcher {
-                val ctx = context ?: return@runOnMainDispatcher
                 test.dialogStatus.set(2)
                 dialog.dismiss()
 
                 if (bestProxies.isEmpty()) {
                     DataStore.runningTest = false
-                    MaterialAlertDialogBuilder(ctx)
+                    MaterialAlertDialogBuilder(requireContext())
                         .setTitle("Экспорт отменён")
                         .setMessage("Нет ни одного рабочего прокси для экспорта!")
                         .setPositiveButton(android.R.string.ok, null)
@@ -1981,7 +1941,7 @@ class ConfigurationFragment @JvmOverloads constructor(
                 }
 
                 // 4. Отправляем на GitHub!
-                val progressDialog = MaterialAlertDialogBuilder(ctx)
+                val progressDialog = MaterialAlertDialogBuilder(requireContext())
                     .setTitle("Выгрузка на GitHub")
                     .setMessage("Отправляем ${bestProxies.size} лучших прокси...")
                     .setCancelable(false)
@@ -1990,11 +1950,7 @@ class ConfigurationFragment @JvmOverloads constructor(
                 runOnDefaultDispatcher {
                     // Обновляем статусы в базе данных локально
                     test.results.forEach {
-                        try {
-                            ProfileManager.updateProfile(it)
-                        } catch (e: Exception) {
-                            Logs.w(e)
-                        }
+                        try { ProfileManager.updateProfile(it) } catch (e: Exception) { Logs.w(e) }
                     }
                     GroupManager.postReload(DataStore.currentGroupId())
 
@@ -2004,9 +1960,8 @@ class ConfigurationFragment @JvmOverloads constructor(
                     DataStore.runningTest = false
 
                     runOnMainDispatcher {
-                        val innerCtx = context ?: return@runOnMainDispatcher
                         progressDialog.dismiss()
-                        MaterialAlertDialogBuilder(innerCtx)
+                        MaterialAlertDialogBuilder(requireContext())
                             .setTitle(if (result.success) "Успех!" else "Ошибка выгрузки")
                             .setMessage(result.message)
                             .setPositiveButton(android.R.string.ok, null)
@@ -2031,29 +1986,16 @@ class ConfigurationFragment @JvmOverloads constructor(
             dialog.hide()
         }
     }
-
     fun runGithubExportSelected() {
         val group = DataStore.currentGroup()
 
         runOnDefaultDispatcher {
             // Получаем все прокси из текущей группы
-            var allProxies = SagerDatabase.proxyDao.getByGroup(group.id)
-
-            // Сортируем список в точности так же, как он отображается в интерфейсе
-            when (group.order) {
-                GroupOrder.BY_NAME -> {
-                    allProxies = allProxies.sortedBy { it.displayName() }
-                }
-
-                GroupOrder.BY_DELAY -> {
-                    allProxies = allProxies.sortedBy { if (it.status == 1) it.ping else 114514 }
-                }
-                // При GroupOrder.ORIGIN список уже отсортирован базой данных (пользовательский порядок)
-            }
+            val allProxies = SagerDatabase.proxyDao.getByGroup(group.id)
+                .sortedBy { it.displayName() } // Сортируем по имени для удобства
 
             if (allProxies.isEmpty()) {
                 onMainDispatcher {
-                    val ctx = context ?: return@onMainDispatcher
                     snackbar("В этой группе нет прокси!").show()
                 }
                 return@runOnDefaultDispatcher
@@ -2065,8 +2007,7 @@ class ConfigurationFragment @JvmOverloads constructor(
             val selectedProxies = mutableListOf<ProxyEntity>()
 
             onMainDispatcher {
-                val ctx = context ?: return@onMainDispatcher
-                MaterialAlertDialogBuilder(ctx)
+                MaterialAlertDialogBuilder(requireContext())
                     .setTitle("Выберите прокси для экспорта")
                     .setMultiChoiceItems(proxyNames, checkedItems) { _, which, isChecked ->
                         checkedItems[which] = isChecked
@@ -2081,28 +2022,12 @@ class ConfigurationFragment @JvmOverloads constructor(
 
                         if (selectedProxies.isEmpty()) {
                             snackbar("Вы ничего не выбрали!").show()
-                            return@setPositiveButton
-                        }
-
-                        // Запускаем процесс отправки
-                        val progressDialog = MaterialAlertDialogBuilder(ctx)
-                            .setTitle("Выгрузка на GitHub")
-                            .setMessage("Отправляем ${selectedProxies.size} прокси...")
-                            .setCancelable(false)
-                            .show()
-
-                        runOnDefaultDispatcher {
-                            val result =
-                                GitHubExporter.exportGroup(group.displayName(), selectedProxies)
-                            runOnMainDispatcher {
-                                val innerCtx = context ?: return@runOnMainDispatcher
-                                progressDialog.dismiss()
-                                MaterialAlertDialogBuilder(innerCtx)
-                                    .setTitle(if (result.success) "Успех!" else "Ошибка выгрузки")
-                                    .setMessage(result.message)
-                                    .setPositiveButton(android.R.string.ok, null)
-                                    .show()
-                            }
+                        } else {
+                            exportMultipleGroups(
+                                group.displayName(),
+                                selectedProxies,
+                                "Отправляем ${selectedProxies.size} прокси..."
+                            )
                         }
                     }
                     .setNegativeButton(android.R.string.cancel, null)
@@ -2110,14 +2035,9 @@ class ConfigurationFragment @JvmOverloads constructor(
             }
         }
     }
-
     fun runGithubExportByCountry() {
-        if (DataStore.runningTest) {
-            snackbar("Тестирование уже запущено! Дождитесь окончания.").show()
-            return
-        }
-
         val group = DataStore.currentGroup()
+
         runOnDefaultDispatcher {
             val allProxies = SagerDatabase.proxyDao.getByGroup(group.id)
 
@@ -2126,19 +2046,26 @@ class ConfigurationFragment @JvmOverloads constructor(
                 return@runOnDefaultDispatcher
             }
 
-            // Группируем прокси по странам (по флагу или названию)
+            // Группируем прокси по странам.
+            // Мы ищем Эмодзи-флаги (например 🇩🇪) или буквенные коды (DE, US) в названии
             val countryMap = mutableMapOf<String, MutableList<ProxyEntity>>()
+
+            // Регулярное выражение для поиска эмодзи-флагов
             val flagRegex = Regex("[\uD83C][\uDDE6-\uDDFF][\uD83C][\uDDE6-\uDDFF]")
 
             for (proxy in allProxies) {
                 val name = proxy.displayName()
+
+                // Пытаемся найти флаг
                 val flagMatch = flagRegex.find(name)
                 val countryKey = if (flagMatch != null) {
+                    // Если есть флаг — берем его и следующее слово (если есть)
                     val flag = flagMatch.value
-                    val afterFlag = name.substringAfter(flag).trim().split(" ").firstOrNull()
-                        ?.replace(Regex("[^\\p{L}]"), "") ?: ""
+                    // Попытка выцепить слово после флага (например "Германия")
+                    val afterFlag = name.substringAfter(flag).trim().split(" ").firstOrNull()?.replace(Regex("[^\\p{L}]"), "") ?: ""
                     if (afterFlag.length > 2) "$flag $afterFlag" else flag
                 } else {
+                    // Если флага нет, берем первое длинное слово в надежде, что это страна
                     val words = name.split(" ", "-", "_")
                     val possibleCountry = words.find { it.length > 2 && !it.contains(Regex("\\d")) }
                     possibleCountry ?: "Неизвестно"
@@ -2151,18 +2078,20 @@ class ConfigurationFragment @JvmOverloads constructor(
             }
 
             val countryNames = countryMap.keys.toTypedArray()
-            val checkedItems = BooleanArray(countryNames.size) { false }
 
             onMainDispatcher {
-                val ctx = context ?: return@onMainDispatcher
-                MaterialAlertDialogBuilder(ctx)
-                    .setTitle("Выберите страны (1 лучший сервер)")
-                    .setMultiChoiceItems(countryNames, checkedItems) { _, which, isChecked ->
-                        checkedItems[which] = isChecked
-                    }
-                    .setPositiveButton("Жесткий экспорт") { _, _ ->
-                        // Запускаем процесс глубокого тестирования
-                        startCountryHardcoreTest(countryNames, checkedItems, countryMap, group)
+                MaterialAlertDialogBuilder(requireContext())
+                    .setTitle("Выберите страну для экспорта")
+                    .setItems(countryNames) { _, which ->
+                        val selectedCountry = countryNames[which]
+                        val proxiesToExport = countryMap[selectedCountry] ?: return@setItems
+
+                        val blockName = "${group.displayName()} - $selectedCountry"
+                        exportMultipleGroups(
+                            blockName,
+                            proxiesToExport,
+                            "Отправляем ${proxiesToExport.size} прокси ($selectedCountry)..."
+                        )
                     }
                     .setNegativeButton(android.R.string.cancel, null)
                     .show()
@@ -2170,421 +2099,27 @@ class ConfigurationFragment @JvmOverloads constructor(
         }
     }
 
-    // Вспомогательная функция для проведения жесткого теста по странам
-    @OptIn(DelicateCoroutinesApi::class)
-    private fun startCountryHardcoreTest(
-        countryNames: Array<String>,
-        checkedItems: BooleanArray,
-        countryMap: Map<String, List<ProxyEntity>>,
-        group: ProxyGroup
+    private fun exportMultipleGroups(
+        blockName: String,
+        proxiesToExport: List<ProxyEntity>,
+        progressMessage: String
     ) {
-        DataStore.runningTest = true
-        val test = TestDialog()
-        val dialog = test.builder.show()
-
-        test.notification = ConnectionTestNotification(
-            requireContext(),
-            "[${group.displayName()}] ЖЕСТКИЙ ТЕСТ СТРАН"
-        )
-
-        val mainJob = runOnDefaultDispatcher {
-            val selectedCountries = mutableListOf<String>()
-            for (i in checkedItems.indices) {
-                if (checkedItems[i]) selectedCountries.add(countryNames[i])
-            }
-
-            if (selectedCountries.isEmpty()) {
-                onMainDispatcher {
-                    test.dialogStatus.set(2)
-                    dialog.dismiss()
-                    DataStore.runningTest = false
-                    snackbar("Вы ничего не выбрали!").show()
-                }
-                return@runOnDefaultDispatcher
-            }
-
-            val groupsToExport = mutableMapOf<String, List<ProxyEntity>>()
-
-            // Проходимся по каждой выбранной стране
-            for (country in selectedCountries) {
-                if (!isActive) break
-                val proxiesForCountry = countryMap[country] ?: continue
-
-                // Сначала пробуем те, у которых хороший пинг в быстром тесте
-                val candidates = proxiesForCountry.sortedBy { if (it.status == 1) it.ping else 114514 }
-                var foundBestForCountry: ProxyEntity? = null
-
-                // Тестируем прокси этой страны по очереди
-                for (candidate in candidates) {
-                    if (!isActive) break
-
-                    runOnMainDispatcher {
-                        test.binding.nowTesting.text = "СТРАНА: $country\nПроверяем: ${candidate.displayName()}"
-                        test.binding.progress.text = "Готово стран: ${groupsToExport.size} / ${selectedCountries.size}"
-                    }
-
-                    try {
-                        // Используем НАСТОЯЩИЙ HTTPS-ТЕСТ ЯДРА
-                        val result = withContext(Dispatchers.IO) {
-                            FullTestInstance(
-                                profile = candidate,
-                                timeout = 10000, // 10 секунд на попытку
-                                minOk = 1
-                            ).doTest()
-                        }
-
-                        // Если сервер успешно скачал данные
-                        if (result.success && result.bestLatencyMs <= 4000L) {
-                            candidate.status = 1
-                            candidate.ping = result.bestLatencyMs.toInt()
-                            candidate.error = null
-                            foundBestForCountry = candidate
-
-                            runOnMainDispatcher { test.update(candidate) }
-                            // МЫ НАШЛИ РАБОЧИЙ! Прерываем цикл и переходим к следующей стране
-                            break
-                        } else {
-                            candidate.status = 3
-                            candidate.error = if (!result.success) (result.error ?: "HTTPS failed") else "Медленный: ${result.bestLatencyMs}ms"
-                        }
-                    } catch (e: Exception) {
-                        candidate.status = 3
-                        candidate.error = e.readableMessage
-                    }
-
-                    runOnMainDispatcher { test.update(candidate) }
-                }
-
-                // Если нашли хотя бы один рабочий сервер для этой страны - добавляем в итоговый список
-                if (foundBestForCountry != null) {
-                    val blockName = "${group.displayName()} - $country"
-                    groupsToExport[blockName] = listOf(foundBestForCountry!!)
-                }
-            }
-
-            // ЭТАП ЭКСПОРТА НА GITHUB
-            runOnMainDispatcher {
-                test.dialogStatus.set(2)
-                dialog.dismiss()
-
-                if (groupsToExport.isEmpty()) {
-                    DataStore.runningTest = false
-                    MaterialAlertDialogBuilder(requireContext())
-                        .setTitle("Экспорт отменён")
-                        .setMessage("НИ ОДИН сервер в выбранных странах не прошел HTTPS тест!")
-                        .setPositiveButton(android.R.string.ok, null)
-                        .show()
-                    return@runOnMainDispatcher
-                }
-
-                val progressDialog = MaterialAlertDialogBuilder(requireContext())
-                    .setTitle("Выгрузка на GitHub")
-                    .setMessage("Отправляем ${groupsToExport.size} стран...")
-                    .setCancelable(false)
-                    .show()
-
-                runOnDefaultDispatcher {
-                    GroupManager.postReload(DataStore.currentGroupId())
-                    // Выгружаем сразу все страны одним коммитом
-                    val result = GitHubExporter.exportMultipleGroups(groupsToExport)
-                    DataStore.runningTest = false
-
-                    runOnMainDispatcher {
-                        progressDialog.dismiss()
-                        MaterialAlertDialogBuilder(requireContext())
-                            .setTitle(if (result.success) "Успех!" else "Ошибка выгрузки")
-                            .setMessage(result.message)
-                            .setPositiveButton(android.R.string.ok, null)
-                            .show()
-                    }
-                }
-            }
-        }
-
-        test.cancel = {
-            test.dialogStatus.set(2)
-            dialog.dismiss()
-            runOnDefaultDispatcher {
-                mainJob.cancel()
-                test.results.forEach {
-                    try { ProfileManager.updateProfile(it) } catch (e: Exception) {}
-                }
-                GroupManager.postReload(DataStore.currentGroupId())
-                DataStore.runningTest = false
-            }
-        }
-
-        test.minimize = {
-            test.dialogStatus.set(1)
-            dialog.hide()
-        }
-    }
-
-    // НОВАЯ ФУНКЦИЯ ДЛЯ ЖЕСТКОГО ТЕСТА (БРОНИРОВАННАЯ ПРОТИВ УТЕЧЕК)
-    @OptIn(DelicateCoroutinesApi::class)
-    fun runGithubHardcoreExport() {
-        if (DataStore.runningTest) {
-            snackbar("Тестирование уже запущено! Дождитесь окончания.").show()
-            return
-        }
-        DataStore.runningTest = true
-        val test = TestDialog()
-        val dialog = test.builder.show()
-        val group = DataStore.currentGroup()
-
-        test.notification = ConnectionTestNotification(
-            requireContext(),
-            "[${group.displayName()}] ЖЕСТКИЙ HTTPS-ТЕСТ"
-        )
-
-        val mainJob = runOnDefaultDispatcher {
-            val allProxies = SagerDatabase.proxyDao.getByGroup(group.id)
-            test.proxyN = allProxies.size
-            val profilesQueue = ConcurrentLinkedQueue(allProxies)
-
-            // ==========================================
-            // ЭТАП 1: БЫСТРЫЙ ПИНГ (Отсеиваем мертвые IP)
-            // ==========================================
-            runOnMainDispatcher {
-                test.binding.nowTesting.text = "ЭТАП 1: Быстрый опрос всех серверов..."
-                test.binding.progress.text = "Проверка: 0 / ${allProxies.size}"
-            }
-
-            val fastTestJobs = mutableListOf<Job>()
-            repeat(DataStore.connectionTestConcurrent) {
-                fastTestJobs.add(launch(Dispatchers.IO) {
-                    val urlTest = UrlTest()
-                    while (isActive) {
-                        val candidate = profilesQueue.poll() ?: break
-                        candidate.status = 0
-                        try {
-                            val result = urlTest.doTest(candidate)
-                            candidate.status = 1
-                            candidate.ping = result
-                            candidate.error = null
-                        } catch (e: Exception) {
-                            candidate.status = 3
-                            candidate.error = e.readableMessage
-                        }
-                        test.update(candidate)
-                    }
-                })
-            }
-            fastTestJobs.joinAll()
-            if (!isActive) return@runOnDefaultDispatcher
-
-            // ==========================================
-            // ЭТАП 2: НАСТОЯЩИЙ ГЛУБОКИЙ HTTPS ТЕСТ
-            // ==========================================
-            val candidates = test.results.filter { it.status == 1 }.sortedBy { it.ping }
-            val limit = DataStore.githubExportLimit
-            val finalBestProxies = mutableListOf<ProxyEntity>()
-            var currentIndex = 0
-
-            runOnMainDispatcher {
-                test.binding.nowTesting.text = "ЭТАП 2: Глубокий HTTPS тест..."
-                test.binding.progress.text = "Отличных серверов: 0 / $limit"
-            }
-
-            while (isActive && finalBestProxies.size < limit && currentIndex < candidates.size) {
-                val candidate = candidates[currentIndex]
-                currentIndex++
-
-                runOnMainDispatcher {
-                    test.binding.nowTesting.text = "HTTPS ТЕСТ (${currentIndex}/${candidates.size})\nПроверяем: ${candidate.displayName()}"
-                }
-
-                try {
-                    // Используем ТОЧНО ТУ ЖЕ функцию, что и ручная кнопка в приложении
-                    // Она сама поднимет соединение внутри Xray и проверит сертификаты (без костылей с VPN)
-                    val result = withContext(Dispatchers.IO) {
-                        FullTestInstance(
-                            profile = candidate,
-                            timeout = 10000, // 10 секунд на установку соединения
-                            minOk = 1
-                        ).doTest()
-                    }
-
-                    if (result.success) {
-                        candidate.status = 1
-                        candidate.ping = result.bestLatencyMs.toInt()
-                        candidate.error = null
-                        finalBestProxies.add(candidate)
-
-                        runOnMainDispatcher {
-                            test.binding.progress.text = "Отличных серверов: ${finalBestProxies.size} / $limit"
-                        }
-                    } else {
-                        candidate.status = 3
-                        candidate.error = result.error ?: "HTTPS failed"
-                    }
-                } catch (e: Exception) {
-                    candidate.status = 3
-                    candidate.error = e.readableMessage
-                }
-
-                runOnMainDispatcher { test.update(candidate) }
-            }
-
-            // ==========================================
-            // ЭТАП 3: ЭКСПОРТ НА GITHUB
-            // ==========================================
-            runOnMainDispatcher {
-                test.dialogStatus.set(2)
-                dialog.dismiss()
-
-                if (finalBestProxies.isEmpty()) {
-                    DataStore.runningTest = false
-                    MaterialAlertDialogBuilder(requireContext())
-                        .setTitle("Экспорт отменён")
-                        .setMessage("НИ ОДИН прокси не прошел глубокий HTTPS тест!")
-                        .setPositiveButton(android.R.string.ok, null)
-                        .show()
-                    return@runOnMainDispatcher
-                }
-
-                val progressDialog = MaterialAlertDialogBuilder(requireContext())
-                    .setTitle("Выгрузка на GitHub")
-                    .setMessage("Отправляем ${finalBestProxies.size} самых быстрых серверов...")
-                    .setCancelable(false)
-                    .show()
-
-                runOnDefaultDispatcher {
-                    GroupManager.postReload(DataStore.currentGroupId())
-                    val result = GitHubExporter.exportGroup(group.displayName(), finalBestProxies)
-                    DataStore.runningTest = false
-                    runOnMainDispatcher {
-                        val innerCtx = context ?: return@runOnMainDispatcher
-                        progressDialog.dismiss()
-                        MaterialAlertDialogBuilder(innerCtx)
-                            .setTitle(if (result.success) "Успех!" else "Ошибка выгрузки")
-                            .setMessage(result.message)
-                            .setPositiveButton(android.R.string.ok, null)
-                            .show()
-                    }
-                }
-            }
-        }
-
-        test.cancel = {
-            test.dialogStatus.set(2)
-            dialog.dismiss()
-            runOnDefaultDispatcher {
-                mainJob.cancel()
-                test.results.forEach {
-                    try { ProfileManager.updateProfile(it) } catch (e: Exception) {}
-                }
-                GroupManager.postReload(DataStore.currentGroupId())
-                DataStore.runningTest = false
-            }
-        }
-
-        test.minimize = {
-            test.dialogStatus.set(1)
-            dialog.hide()
-        }
-    }
-
-    @OptIn(DelicateCoroutinesApi::class)
-    fun runAutoPilotDialog() {
-        if (AutoPilotService.isRunning) {
-            MaterialAlertDialogBuilder(requireContext())
-                .setTitle("🤖 AutoPilot работает")
-                .setMessage("Остановить?")
-                .setPositiveButton("Остановить") { _, _ ->
-                    AutoPilotService.stop(requireContext())
-                    snackbar("AutoPilot остановлен").show()
-                }
-                .setNegativeButton("Не трогать", null)
-                .show()
-            return
-        }
-
-        if (DataStore.runningTest) {
-            snackbar("Другой тест уже запущен!").show()
-            return
-        }
+        val progressDialog = MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Выгрузка на GitHub")
+            .setMessage(progressMessage)
+            .setCancelable(false)
+            .show()
 
         runOnDefaultDispatcher {
-            val allGroups = SagerDatabase.groupDao.allGroups()
-            if (allGroups.isEmpty()) {
-                onMainDispatcher { snackbar("Нет групп!").show() }
-                return@runOnDefaultDispatcher
-            }
-
-            val groupNames = allGroups.map { g ->
-                val count = SagerDatabase.proxyDao.countByGroup(g.id)
-                "${g.displayName()} ($count шт.)"
-            }.toTypedArray()
-
-            val groupChecked = BooleanArray(allGroups.size) { false }
-            val currentIdx = allGroups.indexOfFirst { it.id == DataStore.currentGroupId() }
-            if (currentIdx >= 0) groupChecked[currentIdx] = true
-
-            onMainDispatcher {
-                val ctx = context ?: return@onMainDispatcher
-
-                MaterialAlertDialogBuilder(ctx)
-                    .setTitle("🤖 AutoPilot: группы")
-                    .setMultiChoiceItems(groupNames, groupChecked) { _, w, c ->
-                        groupChecked[w] = c
-                    }
-                    .setPositiveButton("Далее →") { _, _ ->
-                        val ids = mutableListOf<Long>()
-                        for (i in groupChecked.indices) {
-                            if (groupChecked[i]) ids.add(allGroups[i].id)
-                        }
-                        if (ids.isEmpty()) {
-                            snackbar("Выберите группу!").show()
-                            return@setPositiveButton
-                        }
-                        showAutoPilotSettings(ids)
-                    }
-                    .setNegativeButton(android.R.string.cancel, null)
+            val result = GitHubExporter.exportGroup(blockName, proxiesToExport)
+            runOnMainDispatcher {
+                progressDialog.dismiss()
+                MaterialAlertDialogBuilder(requireContext())
+                    .setTitle(if (result.success) "Успех!" else "Ошибка выгрузки")
+                    .setMessage(result.message)
+                    .setPositiveButton(android.R.string.ok, null)
                     .show()
             }
         }
-    }
-    private fun showAutoPilotSettings(groupIds: List<Long>) {
-        val ctx = context ?: return
-        val view = LayoutInflater.from(ctx).inflate(R.layout.dialog_autopilot_settings, null)
-
-        val etLimit = view.findViewById<android.widget.EditText>(R.id.ap_limit)
-        val etHealthInterval = view.findViewById<android.widget.EditText>(R.id.ap_health_interval)
-        val etMaxPing = view.findViewById<android.widget.EditText>(R.id.ap_max_ping)
-
-        val cbCombine = view.findViewById<android.widget.CheckBox>(R.id.ap_combine)
-        val cbWhitelist = view.findViewById<android.widget.CheckBox>(R.id.ap_strict_whitelist)
-
-        // Заполняем поля старыми настройками
-        etLimit?.setText(DataStore.autoPilotExportLimit.toString())
-        etHealthInterval?.setText(DataStore.autoPilotHealthInterval.toString())
-        etMaxPing?.setText(DataStore.autoPilotMaxPing.toString())
-
-        cbCombine?.isChecked = DataStore.autoPilotCombine
-        cbWhitelist?.isChecked = DataStore.autoPilotStrictWhitelist
-
-        MaterialAlertDialogBuilder(ctx)
-            .setTitle("⚙️ Настройки AutoPilot")
-            .setView(view)
-            .setPositiveButton("ЗАПУСТИТЬ") { _, _ ->
-                DataStore.autoPilotGroupIds = groupIds.joinToString(",")
-
-                val newLimit = etLimit?.text?.toString()?.toIntOrNull() ?: 10
-                DataStore.autoPilotExportLimit = newLimit
-                DataStore.githubExportLimit = newLimit
-
-                // ВОТ ОНО! Сохраняем время тихой проверки
-                DataStore.autoPilotHealthInterval = etHealthInterval?.text?.toString()?.toIntOrNull() ?: 10
-
-                DataStore.autoPilotMaxPing = etMaxPing?.text?.toString()?.toIntOrNull() ?: 3000
-                DataStore.autoPilotCombine = cbCombine?.isChecked ?: true
-                DataStore.autoPilotStrictWhitelist = cbWhitelist?.isChecked ?: false
-
-                AutoPilotService.start(ctx)
-                snackbar("Автопилот запущен! Первая проверка начнется прямо сейчас.").show()
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
     }
 }
