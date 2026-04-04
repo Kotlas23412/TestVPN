@@ -16,32 +16,34 @@ import java.util.Locale
 import java.util.TimeZone
 
 object GitHubExporter {
-
     private val client = OkHttpClient()
 
     data class ExportResult(val success: Boolean, val message: String)
 
-    /**
-     * Выполняет "умный" экспорт прокси на GitHub.
-     * Скачивает текущий файл, обновляет только нужную группу и заливает обратно.
-     */
     suspend fun exportGroup(
         groupName: String,
         proxies: List<ProxyEntity>
+    ): ExportResult {
+        return exportMultipleGroups(mapOf(groupName to proxies))
+    }
+
+    suspend fun exportMultipleGroups(
+        groups: Map<String, List<ProxyEntity>>
     ): ExportResult = withContext(Dispatchers.IO) {
-
-        val token = DataStore.githubToken.trim()
-        val repo = DataStore.githubRepo.trim()
-        val path = DataStore.githubFilePath.trim()
-
-        if (token.isBlank() || repo.isBlank() || path.isBlank()) {
-            return@withContext ExportResult(false, "Не указаны настройки GitHub (Token, Repo, Path)")
-        }
-
-        val apiUrl = "https://api.github.com/repos/$repo/contents/$path"
-
+        // БРОНЯ: Оборачиваем ВЕСЬ код в try/catch(Throwable), чтобы ни одна ошибка,
+        // нехватка памяти или кривой ответ сервера не смогли закрыть приложение.
         try {
-            // 1. Получаем текущий файл (чтобы узнать его SHA и текущий текст)
+            val token = DataStore.githubToken.trim()
+            val repo = DataStore.githubRepo.trim()
+            val path = DataStore.githubFilePath.trim()
+
+            if (token.isBlank() || repo.isBlank() || path.isBlank()) {
+                return@withContext ExportResult(false, "Не указаны настройки GitHub (Token, Repo, Path)")
+            }
+
+            val apiUrl = "https://api.github.com/repos/$repo/contents/$path"
+
+            // 1. Получаем текущий файл
             val getReq = Request.Builder()
                 .url(apiUrl)
                 .addHeader("Authorization", "Bearer $token")
@@ -55,7 +57,10 @@ object GitHubExporter {
 
             client.newCall(getReq).execute().use { response ->
                 if (response.isSuccessful) {
-                    val json = JSONObject(response.body!!.string())
+                    // Исключаем краш NullPointerException, если тело ответа пустое
+                    val bodyString = response.body?.string() ?: "{}"
+                    val json = JSONObject(bodyString)
+
                     fileSha = json.optString("sha", "")
                     val base64Content = json.optString("content", "").replace("\n", "")
                     if (base64Content.isNotEmpty()) {
@@ -66,59 +71,71 @@ object GitHubExporter {
                 }
             }
 
-            // 2. Формируем новый блок прокси для текущей группы
-            val newGroupBlock = buildString {
-                appendLine("# === BEGIN $groupName ===")
-                for (p in proxies) {
-                    appendLine(p.toStdLink())
-                }
-                append("# === END $groupName ===")
-            }
+            // 2. Обрабатываем каждый отдельный блок (страну) по очереди
+            var updatedText = currentText
+            for ((blockName, proxies) in groups) {
+                // ФИКС КРАША REGEX: Экранируем спецсимволы в названии группы!
+                // Если имя группы "AutoPilot (Best)", оно не сломает поиск и приложение.
+                val safeBlockName = Regex.escape(blockName)
 
-            // 3. Интегрируем блок в существующий текст
-            val updatedText = if (currentText.isEmpty()) {
-                newGroupBlock
-            } else {
-                val regex = Regex("# === BEGIN $groupName ===.*?# === END $groupName ===", RegexOption.DOT_MATCHES_ALL)
-                if (currentText.contains(regex)) {
-                    currentText.replace(regex, newGroupBlock)
+                val newGroupBlock = buildString {
+                    appendLine("# === BEGIN $blockName ===")
+                    for (p in proxies) {
+                        try {
+                            // Если сервер "битый", он просто пропустится, а не крашнет выгрузку
+                            val link = p.toStdLink()
+                            if (link.isNotBlank()) {
+                                appendLine(link)
+                            }
+                        } catch (e: Throwable) {
+                            // Игнорируем кривую ссылку
+                        }
+                    }
+                    append("# === END $blockName ===")
+                }
+
+                if (updatedText.isEmpty()) {
+                    updatedText = newGroupBlock
                 } else {
-                    currentText + "\n\n" + newGroupBlock
+                    val regex = Regex("# === BEGIN $safeBlockName ===.*?# === END $safeBlockName ===", RegexOption.DOT_MATCHES_ALL)
+                    if (updatedText.contains(regex)) {
+                        updatedText = updatedText.replace(regex, newGroupBlock)
+                    } else {
+                        updatedText = updatedText.trimEnd() + "\n\n" + newGroupBlock
+                    }
                 }
             }
 
-            // 4. Считаем общее количество прокси (строки, начинающиеся с протоколов)
+            // 3. Считаем общее количество прокси
             val lines = updatedText.lines()
             val cleanLines = lines.filter { !it.startsWith("#") && it.contains("://") }
             totalProxiesInFile = cleanLines.size
 
-            // 5. Генерируем ваши заголовки
+            // 4. Генерируем заголовки
             val sdf = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault())
             sdf.timeZone = TimeZone.getDefault()
             val currentDate = sdf.format(Date())
 
-            val rawTitle = "Всё рабочее (Тест) \uD83D\uDD16 $currentDate" // Base64 заголовок
+            val rawTitle = "Всё рабочее (Тест) \uD83D\uDD16 $currentDate"
             val titleBase64 = Base64.encodeToString(rawTitle.toByteArray(), Base64.NO_WRAP)
+            val updatedGroupsNames = groups.keys.joinToString(", ")
 
             val headerBlock = buildString {
                 appendLine("# profile-title: base64:$titleBase64")
                 appendLine("# profile-update-interval: 1")
                 appendLine("# Последнее обновление: $currentDate")
                 appendLine("# Общее количество прокси: $totalProxiesInFile")
-                appendLine("# Последняя обновленная группа: $groupName")
+                appendLine("# Последние обновленные группы: $updatedGroupsNames")
                 appendLine()
             }
 
-            // Удаляем старые заголовки (всё, что до первого === BEGIN)
             val textWithoutHeaders = updatedText.replace(Regex("(?s)^.*?# === BEGIN"), "# === BEGIN")
-
-            // Финальный текст для файла
             val finalText = headerBlock + textWithoutHeaders
             val finalBase64 = Base64.encodeToString(finalText.toByteArray(), Base64.NO_WRAP)
 
-            // 6. Отправляем обновленный файл на GitHub
+            // 5. Отправляем обратно на GitHub
             val putBody = JSONObject().apply {
-                put("message", "Auto-update group: $groupName")
+                put("message", "Auto-update ${groups.size} groups (Countries)")
                 put("content", finalBase64)
                 if (fileSha.isNotEmpty()) {
                     put("sha", fileSha)
@@ -134,14 +151,16 @@ object GitHubExporter {
 
             client.newCall(putReq).execute().use { response ->
                 if (response.isSuccessful) {
-                    return@withContext ExportResult(true, "Успешно выгружено $totalProxiesInFile прокси на GitHub!")
+                    return@withContext ExportResult(true, "Успешно выгружено $totalProxiesInFile прокси (Стран: ${groups.size})!")
                 } else {
                     return@withContext ExportResult(false, "Ошибка отправки: ${response.code} ${response.body?.string()}")
                 }
             }
 
-        } catch (e: Exception) {
-            return@withContext ExportResult(false, "Ошибка: ${e.message}")
+        } catch (e: Throwable) {
+            // Ловим вообще ЛЮБЫЕ ошибки (нет интернета, сломался JSON, нехватка памяти и т.д.)
+            e.printStackTrace()
+            return@withContext ExportResult(false, "Сбой GitHub: ${e.message}")
         }
     }
 }

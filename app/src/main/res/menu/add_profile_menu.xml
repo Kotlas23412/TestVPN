@@ -97,6 +97,9 @@
                 android:id="@+id/action_remove_duplicate"
                 android:title="@string/remove_duplicate" />
             <item
+                android:id="@+id/action_connection_test_clear_results"
+                android:title="@string/connection_test_clear_results" />
+            <item
                 android:id="@+id/action_connection_tcp_ping"
                 android:title="@string/connection_test_tcp_ping" />
             <item
@@ -112,14 +115,23 @@
                 android:id="@+id/action_github_auto_https"
                 android:title="@string/github_export_auto_https_test" />
             <item
+                android:id="@+id/action_github_auto_hardcore"
+                android:title="Авто-экспорт (VPN-ТЕСТ)"
+                app:showAsAction="never" />
+            <item
                 android:id="@+id/action_github_export_selected"
                 android:title="@string/github_export_selected" />
             <item
                 android:id="@+id/action_github_export_country"
                 android:title="@string/github_export_by_country" />
             <item
-                android:id="@+id/action_connection_test_clear_results"
-                android:title="@string/connection_test_clear_results" />
+                android:id="@+id/action_autopilot"
+                android:title="🤖 AutoPilot"
+                app:showAsAction="never" />
+            <item
+                android:id="@+id/action_github_manager"
+                android:title="📁 Менеджер GitHub"
+                app:showAsAction="never" />
             <item
                 android:id="@+id/action_connection_test_delete_unavailable"
                 android:title="@string/connection_test_delete_unavailable" />

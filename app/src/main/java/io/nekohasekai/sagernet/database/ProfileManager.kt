@@ -7,10 +7,12 @@ import io.nekohasekai.sagernet.fmt.AbstractBean
 import io.nekohasekai.sagernet.ktx.Logs
 import io.nekohasekai.sagernet.ktx.app
 import io.nekohasekai.sagernet.ktx.applyDefaultValues
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
 import java.io.IOException
 import java.sql.SQLException
 import java.util.*
-
 
 object ProfileManager {
 
@@ -97,13 +99,7 @@ object ProfileManager {
         }
     }
 
-    suspend fun deleteProfile2(groupId: Long, profileId: Long) {
-        if (SagerDatabase.proxyDao.deleteById(profileId) == 0) return
-        if (DataStore.selectedProxy == profileId) {
-            DataStore.selectedProxy = 0L
-        }
-    }
-
+    // Единственная правильная функция удаления профиля
     suspend fun deleteProfile(groupId: Long, profileId: Long) {
         if (SagerDatabase.proxyDao.deleteById(profileId) == 0) return
         if (DataStore.selectedProxy == profileId) {
@@ -113,6 +109,9 @@ object ProfileManager {
         if (SagerDatabase.proxyDao.countByGroup(groupId) > 1) {
             GroupManager.rearrange(groupId)
         }
+
+        // === АВТОСИНХРОНИЗАЦИЯ ПРИ РУЧНОМ УДАЛЕНИИ ===
+        syncGitHubIfAutoPilot(groupId)
     }
 
     fun getProfile(profileId: Long): ProxyEntity? {
@@ -236,4 +235,29 @@ object ProfileManager {
         return rules
     }
 
+    // === ФУНКЦИЯ ДЛЯ СИНХРОНИЗАЦИИ ПРИ РУЧНОМ УДАЛЕНИИ ===
+    @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
+    private fun syncGitHubIfAutoPilot(groupId: Long) {
+        // Запускаем выгрузку в фоне, чтобы интерфейс не завис
+        GlobalScope.launch(Dispatchers.IO) {
+            try {
+                val group = SagerDatabase.groupDao.getById(groupId) ?: return@launch
+                val groupName = "🚀 AutoPilot Best"
+
+                // Если удаление произошло именно из нашей "золотой" группы
+                if (group.name == groupName || group.displayName() == groupName) {
+                    val remainingProxies = SagerDatabase.proxyDao.getByGroup(groupId)
+
+                    // Если включена комбо-выгрузка
+                    if (DataStore.autoPilotCombine) {
+                        io.nekohasekai.sagernet.utils.GitHubExporter.exportGroup("AutoPilot Best", remainingProxies)
+                    } else {
+                        io.nekohasekai.sagernet.utils.GitHubExporter.exportGroup("AutoPilot - $groupName", remainingProxies)
+                    }
+                }
+            } catch (e: Exception) {
+                Logs.e("Manual sync to GitHub failed", e)
+            }
+        }
+    }
 }

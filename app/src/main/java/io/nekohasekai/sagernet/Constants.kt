@@ -151,6 +151,17 @@ object Key {
 
     const val APP_TLS_VERSION = "appTLSVersion"
     const val ENABLE_CLASH_API = "enableClashAPI"
+
+    const val AP_GROUP_IDS = "apGroupIds"
+    const val AP_EXPORT_LIMIT = "apExportLimit"
+    const val AP_TEST_URL = "apTestUrl"
+    const val AP_MAX_PING = "apMaxPing"
+    const val AP_TEST_ROUNDS = "apTestRounds"
+    const val AP_MIN_SUCCESS = "apMinSuccess"
+    const val AP_INTERVAL = "apInterval"
+    const val AP_HEALTH_INTERVAL = "apHealthInterval"
+    const val AP_DEAD_THRESHOLD = "apDeadThreshold"
+    const val AP_COMBINE = "apCombine"
 }
 
 object TunImplementation {

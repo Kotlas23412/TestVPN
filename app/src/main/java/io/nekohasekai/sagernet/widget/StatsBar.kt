@@ -12,6 +12,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.whenStarted
 import com.google.android.material.bottomappbar.BottomAppBar
 import io.nekohasekai.sagernet.R
+import io.nekohasekai.sagernet.R.string.connection_test_available_http
 import io.nekohasekai.sagernet.bg.BaseService
 import io.nekohasekai.sagernet.database.DataStore
 import io.nekohasekai.sagernet.ktx.*
@@ -136,7 +137,7 @@ class StatsBar @JvmOverloads constructor(
                             if (DataStore.connectionTestURL.startsWith("https://")) {
                                 R.string.connection_test_available
                             } else {
-                                R.string.connection_test_available_http
+                                connection_test_available_http
                             }, elapsed
                         )
                     )

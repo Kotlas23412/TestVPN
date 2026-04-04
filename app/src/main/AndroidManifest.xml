@@ -14,6 +14,9 @@
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED" />
+    <!-- НОВОЕ РАЗРЕШЕНИЕ для AutoPilot (требуется с Android 14 для foregroundServiceType="dataSync") -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
@@ -292,7 +295,17 @@
                 <action android:name="android.net.VpnService" />
             </intent-filter>
         </service>
-
+        <!-- НОВЫЙ СЕРВИС AutoPilot -->
+        <service
+            android:name="io.nekohasekai.sagernet.bg.AutoPilotService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+        <activity
+            android:name="io.nekohasekai.sagernet.ui.GitHubManagerActivity"
+            android:configChanges="uiMode|orientation"
+            android:exported="false"
+            android:theme="@style/Theme.AppCompat.DayNight.NoActionBar"
+            android:label="Менеджер GitHub" />
         <service
             android:name="io.nekohasekai.sagernet.bg.TileService"
             android:exported="true"

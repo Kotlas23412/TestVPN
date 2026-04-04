@@ -118,7 +118,9 @@ class ServiceNotification(
         .setContentTitle(title)
         .setOnlyAlertOnce(true)
         .setContentIntent(SagerNet.configureIntent(service))
-        .setSmallIcon(R.drawable.ic_service_active)
+        .setSmallIcon(R.drawable.ic_stat_my_vpn)
+        // ВАША ЦВЕТНАЯ КАРТИНКА ТУТ:
+        .setLargeIcon(android.graphics.BitmapFactory.decodeResource((service as Context).resources, R.drawable.my_new_logo))
         .setCategory(NotificationCompat.CATEGORY_SERVICE)
         .setPriority(if (visible) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_MIN)
 

@@ -54,7 +54,26 @@ class SagerNet : Application(),
     override fun onCreate() {
         super.onCreate()
 
+        // Сначала ставим стандартный обработчик приложения
         Thread.setDefaultUncaughtExceptionHandler(CrashHandler)
+
+        // ЗАПИСЬ ЛЮБОГО КРАША В ФАЙЛ НА ТЕЛЕФОНЕ (Добавлено нами)
+        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, exception ->
+            try {
+                // Записываем ошибку в файл CRASH_LOG.txt
+                val logFile = File(getExternalFilesDir(null), "CRASH_LOG.txt")
+                val writer = java.io.FileWriter(logFile, true)
+                writer.append("\n\n==== ВЫЛЕТ ПРИЛОЖЕНИЯ: ${java.util.Date()} ====\n")
+                writer.append(exception.stackTraceToString())
+                writer.append("\n==================================================\n")
+                writer.close()
+            } catch (e: Exception) {
+                // Игнорируем ошибку самой записи
+            }
+            // Отдаем ошибку стандартному обработчику, чтобы приложение закрылось
+            defaultHandler?.uncaughtException(thread, exception)
+        }
 
         if (isMainProcess || isBgProcess) {
             externalAssets.mkdirs()
@@ -215,5 +234,4 @@ class SagerNet : Application(),
             n
         }()
     }
-
 }

@@ -289,4 +289,55 @@ object DataStore : OnPreferenceDataStoreChangeListener {
                 putInt("github_export_limit", value)
             }
         }
+
+    // =======================================================
+    // AUTOPILOT SETTINGS
+    // =======================================================
+    var autoPilotGroupIds: String
+        get() = profileCacheStore.getString(Key.AP_GROUP_IDS) ?: ""
+        set(value) = profileCacheStore.putString(Key.AP_GROUP_IDS, value)
+
+    var autoPilotExportLimit: Int
+        get() = profileCacheStore.getInt(Key.AP_EXPORT_LIMIT) ?: 10
+        set(value) = profileCacheStore.putInt(Key.AP_EXPORT_LIMIT, value)
+
+    var autoPilotTestUrl: String
+        get() = profileCacheStore.getString(Key.AP_TEST_URL) ?: ""
+        set(value) = profileCacheStore.putString(Key.AP_TEST_URL, value)
+
+    var autoPilotMaxPing: Int
+        get() = profileCacheStore.getInt(Key.AP_MAX_PING) ?: 3000
+        set(value) = profileCacheStore.putInt(Key.AP_MAX_PING, value)
+
+    var autoPilotTestRounds: Int
+        get() = profileCacheStore.getInt(Key.AP_TEST_ROUNDS) ?: 5
+        set(value) = profileCacheStore.putInt(Key.AP_TEST_ROUNDS, value)
+
+    var autoPilotMinSuccess: Int
+        get() = profileCacheStore.getInt(Key.AP_MIN_SUCCESS) ?: 80
+        set(value) = profileCacheStore.putInt(Key.AP_MIN_SUCCESS, value)
+
+    var autoPilotInterval: Int
+        get() = profileCacheStore.getInt(Key.AP_INTERVAL) ?: 60
+        set(value) = profileCacheStore.putInt(Key.AP_INTERVAL, value)
+
+    var autoPilotHealthInterval: Int
+        get() = profileCacheStore.getInt(Key.AP_HEALTH_INTERVAL) ?: 10
+        set(value) = profileCacheStore.putInt(Key.AP_HEALTH_INTERVAL, value)
+
+    var autoPilotDeadThreshold: Int
+        get() = profileCacheStore.getInt(Key.AP_DEAD_THRESHOLD) ?: 50
+        set(value) = profileCacheStore.putInt(Key.AP_DEAD_THRESHOLD, value)
+
+    var autoPilotCombine: Boolean
+        get() = profileCacheStore.getBoolean(Key.AP_COMBINE) ?: true
+        set(value) = profileCacheStore.putBoolean(Key.AP_COMBINE, value)
+
+    var autoPilotStrictWhitelist: Boolean
+        get() = profileCacheStore.getBoolean("apStrictWhitelist") ?: false
+        set(value) = profileCacheStore.putBoolean("apStrictWhitelist", value)
+
+    var autoPilotKeepVpn: Boolean
+        get() = profileCacheStore.getBoolean("apKeepVpn") ?: false
+        set(value) = profileCacheStore.putBoolean("apKeepVpn", value)
 }

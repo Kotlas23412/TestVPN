@@ -12,11 +12,9 @@ import androidx.appcompat.app.AlertDialog
 import androidx.core.content.FileProvider
 import androidx.core.view.isVisible
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.jakewharton.processphoenix.ProcessPhoenix
 import io.nekohasekai.sagernet.BuildConfig
 import io.nekohasekai.sagernet.R
 import io.nekohasekai.sagernet.SagerNet
-import io.nekohasekai.sagernet.bg.Executable
 import io.nekohasekai.sagernet.database.*
 import io.nekohasekai.sagernet.database.preference.KeyValuePair
 import io.nekohasekai.sagernet.database.preference.PublicDatabase
@@ -163,6 +161,28 @@ class BackupFragment : NamedFragment(R.layout.layout_backup) {
                         put(it.toBase64Str())
                     }
                 })
+
+                // === ДОБАВЛЕНО: СОХРАНЕНИЕ НАСТРОЕК GITHUB ===
+                put("github_token_backup", DataStore.githubToken)
+                put("github_repo_backup", DataStore.githubRepo)
+                put("github_path_backup", DataStore.githubFilePath)
+                put("github_limit_backup", DataStore.githubExportLimit)
+
+                // === ДОБАВЛЕНО: СОХРАНЕНИЕ НАСТРОЕК AUTOPILOT ===
+                put("ap_group_ids_backup", DataStore.autoPilotGroupIds)
+                put("ap_export_limit_backup", DataStore.autoPilotExportLimit)
+                put("ap_test_url_backup", DataStore.autoPilotTestUrl)
+                put("ap_max_ping_backup", DataStore.autoPilotMaxPing)
+                put("ap_test_rounds_backup", DataStore.autoPilotTestRounds)
+                put("ap_min_success_backup", DataStore.autoPilotMinSuccess)
+                put("ap_interval_backup", DataStore.autoPilotInterval)
+                put("ap_health_interval_backup", DataStore.autoPilotHealthInterval)
+                put("ap_dead_threshold_backup", DataStore.autoPilotDeadThreshold)
+                put("ap_combine_backup", DataStore.autoPilotCombine)
+                put("ap_strict_whitelist_backup", DataStore.autoPilotStrictWhitelist)
+
+                // Сохраняем главный URL тестирования соединения
+                put("connection_test_url_main", DataStore.connectionTestURL)
             }
         }
         return out.toStringPretty()
@@ -319,7 +339,28 @@ class BackupFragment : NamedFragment(R.layout.layout_backup) {
             }
             PublicDatabase.kvPairDao.reset()
             PublicDatabase.kvPairDao.insert(settings)
+
+            // === ДОБАВЛЕНО: ВОССТАНОВЛЕНИЕ НАСТРОЕК GITHUB ===
+            if (content.has("github_token_backup")) DataStore.githubToken = content.getString("github_token_backup")
+            if (content.has("github_repo_backup")) DataStore.githubRepo = content.getString("github_repo_backup")
+            if (content.has("github_path_backup")) DataStore.githubFilePath = content.getString("github_path_backup")
+            if (content.has("github_limit_backup")) DataStore.githubExportLimit = content.getInt("github_limit_backup")
+
+            // === ДОБАВЛЕНО: ВОССТАНОВЛЕНИЕ НАСТРОЕК AUTOPILOT ===
+            if (content.has("ap_group_ids_backup")) DataStore.autoPilotGroupIds = content.getString("ap_group_ids_backup")
+            if (content.has("ap_export_limit_backup")) DataStore.autoPilotExportLimit = content.getInt("ap_export_limit_backup")
+            if (content.has("ap_test_url_backup")) DataStore.autoPilotTestUrl = content.getString("ap_test_url_backup")
+            if (content.has("ap_max_ping_backup")) DataStore.autoPilotMaxPing = content.getInt("ap_max_ping_backup")
+            if (content.has("ap_test_rounds_backup")) DataStore.autoPilotTestRounds = content.getInt("ap_test_rounds_backup")
+            if (content.has("ap_min_success_backup")) DataStore.autoPilotMinSuccess = content.getInt("ap_min_success_backup")
+            if (content.has("ap_interval_backup")) DataStore.autoPilotInterval = content.getInt("ap_interval_backup")
+            if (content.has("ap_health_interval_backup")) DataStore.autoPilotHealthInterval = content.getInt("ap_health_interval_backup")
+            if (content.has("ap_dead_threshold_backup")) DataStore.autoPilotDeadThreshold = content.getInt("ap_dead_threshold_backup")
+            if (content.has("ap_combine_backup")) DataStore.autoPilotCombine = content.getBoolean("ap_combine_backup")
+            if (content.has("ap_strict_whitelist_backup")) DataStore.autoPilotStrictWhitelist = content.getBoolean("ap_strict_whitelist_backup")
+
+            // Восстановление главного URL для тестирования
+            if (content.has("connection_test_url_main")) DataStore.connectionTestURL = content.getString("connection_test_url_main")
         }
     }
-
 }
