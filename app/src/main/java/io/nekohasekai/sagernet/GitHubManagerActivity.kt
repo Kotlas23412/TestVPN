@@ -79,8 +79,27 @@ class GitHubManagerActivity : AppCompatActivity() {
         adapter = GithubAdapter(allLines)
         recyclerView.adapter = adapter
 
+        findViewById<Button>(R.id.btn_delete_selected).setOnClickListener {
+            val checkedCount = allLines.count { it.type == TYPE_PROXY && it.isChecked }
+            if (checkedCount == 0) {
+                Toast.makeText(this, "Сначала отметьте прокси для удаления", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
+            MaterialAlertDialogBuilder(this)
+                .setTitle("Удалить выбранные?")
+                .setMessage("Будет удалено прокси: $checkedCount")
+                .setPositiveButton("Удалить") { _, _ ->
+                    allLines.removeAll { it.type == TYPE_PROXY && it.isChecked }
+                    adapter.notifyDataSetChanged()
+                    Toast.makeText(this, "Удалено: $checkedCount", Toast.LENGTH_SHORT).show()
+                }
+                .setNegativeButton("Отмена", null)
+                .show()
+        }
+
         findViewById<Button>(R.id.btn_clear_all).setOnClickListener {
-            androidx.appcompat.app.AlertDialog.Builder(this) // <--- Изменена только эта строчка
+            MaterialAlertDialogBuilder(this)
                 .setTitle("Очистить всё?")
                 .setMessage("Это удалит ВСЕ прокси и группы из файла. Останутся только настройки обновления вверху.")
                 .setPositiveButton("Да, удалить всё") { _, _ ->
