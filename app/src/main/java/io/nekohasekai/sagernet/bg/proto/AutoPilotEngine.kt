@@ -1,5 +1,6 @@
 package io.nekohasekai.sagernet.bg
 
+import android.annotation.SuppressLint
 import android.os.SystemClock
 import io.nekohasekai.sagernet.GroupType
 import io.nekohasekai.sagernet.SagerNet
@@ -467,6 +468,20 @@ class AutoPilotEngine(
     }
 
     private suspend fun doExport(proxies: List<ProxyEntity>): GitHubExporter.ExportResult {
+
+        // --- МАГИЯ КРАСИВЫХ НАЗВАНИЙ ДЛЯ ЭКСПОРТА ---
+        // Переименовываем все прокси прямо перед отправкой в GitHub
+        proxies.forEachIndexed { index, p ->
+            try {
+                val bean = p.requireBean()
+                // Заменяем имя на чистое и структурированное
+                bean.name = formatNiceName(bean.name, index)
+                // Так как объекты в Kotlin передаются по ссылке,
+                // GitHubExporter автоматически получит уже новые красивые имена!
+            } catch (_: Exception) {}
+        }
+        // --------------------------------------------
+
         return if (config.combineExport) {
             GitHubExporter.exportGroup("AutoPilot Best", proxies)
         } else {
@@ -482,7 +497,72 @@ class AutoPilotEngine(
             GitHubExporter.ExportResult(!anyFail, msgs.joinToString("\n"))
         }
     }
+    // Универсальный генератор названий для ВСЕХ стран мира
+    @SuppressLint("DefaultLocale")
+    private fun formatNiceName(originalName: String, index: Int): String {
+        val upper = originalName.uppercase()
+        // Определяем принадлежность к CIDR / LTE
+        val isLte = upper.contains("CIDR") || upper.contains("LTE") || upper.contains("/24") || upper.contains("/16")
 
+        var flag = "🌍"
+        var countryName = "Неизвестно"
+
+        // 1. Ищем уже готовый эмодзи-флаг в грязном названии
+        val flagRegex = Regex("[\uD83C][\uDDE6-\uDDFF][\uD83C][\uDDE6-\uDDFF]")
+        val flagMatch = flagRegex.find(originalName)
+
+        if (flagMatch != null) {
+            flag = flagMatch.value
+            try {
+                // Конвертируем Эмодзи в код страны (например 🇷🇺 -> RU)
+                val c1 = flag.codePointAt(0) - 0x1F1E6 + 'A'.code
+                val c2 = flag.codePointAt(2) - 0x1F1E6 + 'A'.code
+                val countryCode = "${c1.toChar()}${c2.toChar()}"
+
+                // Достаем название страны на русском из базы Android
+                val loc = java.util.Locale("ru", countryCode)
+                countryName = loc.displayCountry
+            } catch (e: Exception) {
+                countryName = "Локация"
+            }
+        } else {
+            // 2. Если флага нет, прогоняем через базу ВСЕХ стран мира (около 250 стран)
+            val allCountryCodes = java.util.Locale.getISOCountries()
+
+            for (code in allCountryCodes) {
+                val localeEn = java.util.Locale("en", code)
+                val nameEn = localeEn.displayCountry.uppercase()
+                val code3 = try { localeEn.isO3Country.uppercase() } catch (e: Exception) { "" }
+
+                // Ищем английское имя (GERMANY), 3-букв код (DEU) или 2-букв код с границами ( DE , -DE-)
+                if (upper.contains(nameEn) ||
+                    (code3.length == 3 && upper.contains(code3)) ||
+                    upper.contains(" $code ") ||
+                    upper.contains("-$code-") ||
+                    upper.contains("_${code}_")
+                ) {
+                    // Нашли! Генерируем эмодзи-флаг математически
+                    val firstLetter = Character.codePointAt(code, 0) - 0x41 + 0x1F1E6
+                    val secondLetter = Character.codePointAt(code, 1) - 0x41 + 0x1F1E6
+                    flag = String(Character.toChars(firstLetter)) + String(Character.toChars(secondLetter))
+
+                    // Получаем русское название
+                    countryName = java.util.Locale("ru", code).displayCountry
+                    break // Страна найдена, останавливаем поиск
+                }
+            }
+        }
+
+        // Защита от дубликатов (порядковый номер 01, 02...)
+        val num = String.format("%02d", index + 1)
+
+        // Формируем финальную строку
+        return if (isLte) {
+            "$flag $countryName | LTE $num"
+        } else {
+            "$flag $countryName $num"
+        }
+    }
     private suspend fun waitForState(target: BaseService.State, timeoutMs: Long): Boolean {
         val deadline = SystemClock.elapsedRealtime() + timeoutMs
         while (SystemClock.elapsedRealtime() < deadline) {

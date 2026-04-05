@@ -348,192 +348,66 @@ class ConfigurationFragment @JvmOverloads constructor(
 
     override fun onMenuItemClick(item: MenuItem): Boolean {
         when (item.itemId) {
-            R.id.action_scan_qr_code -> {
-                startActivity(Intent(context, ScannerActivity::class.java))
-            }
+            R.id.action_scan_qr_code -> startActivity(Intent(context, ScannerActivity::class.java))
 
             R.id.action_import_clipboard -> {
                 val text = SagerNet.getClipboardText()
-                if (text.isBlank()) {
-                    snackbar(getString(R.string.clipboard_empty)).show()
-                } else runOnDefaultDispatcher {
+                if (text.isBlank()) snackbar(getString(R.string.clipboard_empty)).show()
+                else runOnDefaultDispatcher {
                     try {
                         val proxies = RawUpdater.parseRaw(text)
-                        if (proxies.isNullOrEmpty()) onMainDispatcher {
-                            snackbar(getString(R.string.no_proxies_found_in_clipboard)).show()
-                        } else import(proxies)
+                        if (proxies.isNullOrEmpty()) onMainDispatcher { snackbar(getString(R.string.no_proxies_found_in_clipboard)).show() }
+                        else import(proxies)
                     } catch (e: SubscriptionFoundException) {
                         (requireActivity() as MainActivity).importSubscription(e.link.toUri())
                     } catch (e: Exception) {
-                        Logs.w(e)
-
-                        onMainDispatcher {
-                            snackbar(e.readableMessage).show()
-                        }
+                        onMainDispatcher { snackbar(e.readableMessage).show() }
                     }
                 }
             }
 
-            R.id.action_import_file -> {
-                startFilesForResult(importFile, "*/*")
-            }
+            R.id.action_import_file -> startFilesForResult(importFile, "*/*")
+            R.id.action_new_socks -> startActivity(Intent(requireActivity(), SocksSettingsActivity::class.java))
+            R.id.action_new_http -> startActivity(Intent(requireActivity(), HttpSettingsActivity::class.java))
+            R.id.action_new_ss -> startActivity(Intent(requireActivity(), ShadowsocksSettingsActivity::class.java))
+            R.id.action_new_vmess -> startActivity(Intent(requireActivity(), VMessSettingsActivity::class.java))
+            R.id.action_new_vless -> startActivity(Intent(requireActivity(), VMessSettingsActivity::class.java).apply { putExtra("vless", true) })
+            R.id.action_new_trojan -> startActivity(Intent(requireActivity(), TrojanSettingsActivity::class.java))
+            R.id.action_new_trojan_go -> startActivity(Intent(requireActivity(), TrojanGoSettingsActivity::class.java))
+            R.id.action_new_mieru -> startActivity(Intent(requireActivity(), MieruSettingsActivity::class.java))
+            R.id.action_new_naive -> startActivity(Intent(requireActivity(), NaiveSettingsActivity::class.java))
+            R.id.action_new_hysteria -> startActivity(Intent(requireActivity(), HysteriaSettingsActivity::class.java))
+            R.id.action_new_tuic -> startActivity(Intent(requireActivity(), TuicSettingsActivity::class.java))
+            R.id.action_new_ssh -> startActivity(Intent(requireActivity(), SSHSettingsActivity::class.java))
+            R.id.action_new_wg -> startActivity(Intent(requireActivity(), WireGuardSettingsActivity::class.java))
+            R.id.action_new_shadowtls -> startActivity(Intent(requireActivity(), ShadowTLSSettingsActivity::class.java))
+            R.id.action_new_anytls -> startActivity(Intent(requireActivity(), AnyTLSSettingsActivity::class.java))
+            R.id.action_new_config -> startActivity(Intent(requireActivity(), ConfigSettingActivity::class.java))
+            R.id.action_new_chain -> startActivity(Intent(requireActivity(), ChainSettingsActivity::class.java))
 
-            R.id.action_new_socks -> {
-                startActivity(Intent(requireActivity(), SocksSettingsActivity::class.java))
-            }
-
-            R.id.action_new_http -> {
-                startActivity(Intent(requireActivity(), HttpSettingsActivity::class.java))
-            }
-
-            R.id.action_new_ss -> {
-                startActivity(Intent(requireActivity(), ShadowsocksSettingsActivity::class.java))
-            }
-
-            R.id.action_new_vmess -> {
-                startActivity(Intent(requireActivity(), VMessSettingsActivity::class.java))
-            }
-
-            R.id.action_new_vless -> {
-                startActivity(Intent(requireActivity(), VMessSettingsActivity::class.java).apply {
-                    putExtra("vless", true)
-                })
-            }
-
-            R.id.action_new_trojan -> {
-                startActivity(Intent(requireActivity(), TrojanSettingsActivity::class.java))
-            }
-
-            R.id.action_new_trojan_go -> {
-                startActivity(Intent(requireActivity(), TrojanGoSettingsActivity::class.java))
-            }
-
-            R.id.action_new_mieru -> {
-                startActivity(Intent(requireActivity(), MieruSettingsActivity::class.java))
-            }
-
-            R.id.action_new_naive -> {
-                startActivity(Intent(requireActivity(), NaiveSettingsActivity::class.java))
-            }
-
-            R.id.action_new_hysteria -> {
-                startActivity(Intent(requireActivity(), HysteriaSettingsActivity::class.java))
-            }
-
-            R.id.action_new_tuic -> {
-                startActivity(Intent(requireActivity(), TuicSettingsActivity::class.java))
-            }
-
-            R.id.action_new_ssh -> {
-                startActivity(Intent(requireActivity(), SSHSettingsActivity::class.java))
-            }
-
-            R.id.action_new_wg -> {
-                startActivity(Intent(requireActivity(), WireGuardSettingsActivity::class.java))
-            }
-
-            R.id.action_new_shadowtls -> {
-                startActivity(Intent(requireActivity(), ShadowTLSSettingsActivity::class.java))
-            }
-
-            R.id.action_new_anytls -> {
-                startActivity(Intent(requireActivity(), AnyTLSSettingsActivity::class.java))
-            }
-
-            R.id.action_new_config -> {
-                startActivity(Intent(requireActivity(), ConfigSettingActivity::class.java))
-            }
-
-            R.id.action_new_chain -> {
-                startActivity(Intent(requireActivity(), ChainSettingsActivity::class.java))
-            }
-
+            // 1. Update current Group's subscription
             R.id.action_update_subscription -> {
-                val group = DataStore.currentGroup()
-                if (group.type != GroupType.SUBSCRIPTION) {
-                    snackbar(R.string.group_not_subscription).show()
-                    Logs.e("onMenuItemClick: Group(${group.displayName()}) is not subscription")
-                } else {
-                    runOnLifecycleDispatcher {
-                        GroupUpdater.startUpdate(group, true)
+                runOnDefaultDispatcher {
+                    val group = SagerDatabase.groupDao.getById(DataStore.currentGroupId())
+                    if (group != null && group.type == GroupType.SUBSCRIPTION) {
+                        io.nekohasekai.sagernet.group.GroupUpdater.startUpdate(group, false)
+                        onMainDispatcher { snackbar("Запущено обновление подписки...").show() }
+                    } else {
+                        onMainDispatcher { snackbar("Эта группа не является подпиской").show() }
                     }
                 }
             }
 
+            // 2. Clear traffic statistics
             R.id.action_clear_traffic_statistics -> {
                 runOnDefaultDispatcher {
-                    val profiles = SagerDatabase.proxyDao.getByGroup(DataStore.currentGroupId())
-                    val toClear = mutableListOf<ProxyEntity>()
-                    if (profiles.isNotEmpty()) for (profile in profiles) {
-                        if (profile.tx != 0L || profile.rx != 0L) {
-                            profile.tx = 0
-                            profile.rx = 0
-                            toClear.add(profile)
-                        }
-                    }
-                    if (toClear.isNotEmpty()) {
-                        ProfileManager.updateProfile(toClear)
-                    }
+                    val proxies = SagerDatabase.proxyDao.getByGroup(DataStore.currentGroupId())
+                    for (p in proxies) { p.tx = 0L; p.rx = 0L; ProfileManager.updateProfile(p) }
+                    onMainDispatcher { GroupManager.postReload(DataStore.currentGroupId()); snackbar("Статистика трафика очищена").show() }
                 }
             }
 
-            R.id.action_connection_test_clear_results -> {
-                runOnDefaultDispatcher {
-                    val profiles = SagerDatabase.proxyDao.getByGroup(DataStore.currentGroupId())
-                    val toClear = mutableListOf<ProxyEntity>()
-                    if (profiles.isNotEmpty()) for (profile in profiles) {
-                        if (profile.status != 0) {
-                            profile.status = 0
-                            profile.ping = 0
-                            profile.error = null
-                            toClear.add(profile)
-                        }
-                    }
-                    if (toClear.isNotEmpty()) {
-                        ProfileManager.updateProfile(toClear)
-                    }
-                }
-            }
-
-            R.id.action_connection_test_delete_unavailable -> {
-                runOnDefaultDispatcher {
-                    val profiles = SagerDatabase.proxyDao.getByGroup(DataStore.currentGroupId())
-                    val toClear = mutableListOf<ProxyEntity>()
-                    if (profiles.isNotEmpty()) for (profile in profiles) {
-                        if (profile.status != 0 && profile.status != 1) {
-                            toClear.add(profile)
-                        }
-                    }
-                    if (toClear.isNotEmpty()) {
-                        onMainDispatcher {
-                            MaterialAlertDialogBuilder(requireContext()).setTitle(R.string.confirm)
-                                .setMessage(R.string.delete_confirm_prompt)
-                                .setPositiveButton(R.string.yes) { _, _ ->
-                                    for (profile in toClear) {
-                                        adapter.groupFragments[DataStore.selectedGroup]?.adapter?.apply {
-                                            val index = configurationIdList.indexOf(profile.id)
-                                            if (index >= 0) {
-                                                configurationIdList.removeAt(index)
-                                                configurationList.remove(profile.id)
-                                                notifyItemRemoved(index)
-                                            }
-                                        }
-                                    }
-                                    runOnDefaultDispatcher {
-                                        for (profile in toClear) {
-                                            ProfileManager.deleteProfile(
-                                                profile.groupId, profile.id
-                                            )
-                                        }
-                                    }
-                                }
-                                .setNegativeButton(R.string.no, null)
-                                .show()
-                        }
-                    }
-                }
-            }
-
+            // 3. Remove duplicate servers
             R.id.action_remove_duplicate -> {
                 runOnDefaultDispatcher {
                     val profiles = SagerDatabase.proxyDao.getByGroup(DataStore.currentGroupId())
@@ -541,67 +415,80 @@ class ConfigurationFragment @JvmOverloads constructor(
                     val uniqueProxies = LinkedHashSet<Protocols.Deduplication>()
                     for (pf in profiles) {
                         val proxy = Protocols.Deduplication(pf.requireBean(), pf.displayType())
-                        if (!uniqueProxies.add(proxy)) {
-                            toClear += pf
-                        }
+                        if (!uniqueProxies.add(proxy)) toClear += pf
                     }
                     if (toClear.isNotEmpty()) {
                         onMainDispatcher {
                             MaterialAlertDialogBuilder(requireContext()).setTitle(R.string.confirm)
-                                .setMessage(
-                                    getString(R.string.delete_confirm_prompt) + "\n" +
-                                            toClear.mapIndexedNotNull { index, proxyEntity ->
-                                                if (index < 20) {
-                                                    proxyEntity.displayName()
-                                                } else if (index == 20) {
-                                                    "......"
-                                                } else {
-                                                    null
-                                                }
-                                            }.joinToString("\n")
-                                )
+                                .setMessage(getString(R.string.delete_confirm_prompt) + "\nУдаляем дубликатов: ${toClear.size} шт.")
                                 .setPositiveButton(R.string.yes) { _, _ ->
-                                    for (profile in toClear) {
-                                        adapter.groupFragments[DataStore.selectedGroup]?.adapter?.apply {
-                                            val index = configurationIdList.indexOf(profile.id)
-                                            if (index >= 0) {
-                                                configurationIdList.removeAt(index)
-                                                configurationList.remove(profile.id)
-                                                notifyItemRemoved(index)
-                                            }
-                                        }
-                                    }
                                     runOnDefaultDispatcher {
-                                        for (profile in toClear) {
-                                            ProfileManager.deleteProfile(
-                                                profile.groupId, profile.id
-                                            )
-                                        }
+                                        for (profile in toClear) ProfileManager.deleteProfile(profile.groupId, profile.id)
+                                        onMainDispatcher { GroupManager.postReload(DataStore.currentGroupId()) }
                                     }
                                 }
-                                .setNegativeButton(R.string.no, null)
-                                .show()
+                                .setNegativeButton(R.string.no, null).show()
                         }
-                    }
+                    } else onMainDispatcher { snackbar("Дубликатов не найдено").show() }
                 }
             }
 
-            R.id.action_connection_tcp_ping -> {
-                pingTest(false)
+            // 4. Clear test results
+            R.id.action_connection_test_clear_results -> {
+                runOnDefaultDispatcher {
+                    val proxies = SagerDatabase.proxyDao.getByGroup(DataStore.currentGroupId())
+                    for (p in proxies) { p.status = 0; p.ping = 0; p.error = null; ProfileManager.updateProfile(p) }
+                    onMainDispatcher { GroupManager.postReload(DataStore.currentGroupId()); snackbar("Результаты тестов очищены").show() }
+                }
             }
 
-            R.id.action_connection_url_test -> {
-                urlTest()
-            }
-            R.id.action_full_https_test -> {
-                fullHttpsTest()
-            }
-            R.id.action_github_auto_url -> {
-                runGithubAutoExport(useHttpsTest = false)
+            // 5, 6, 7. Тесты
+            R.id.action_connection_tcp_ping -> pingTest(false)
+            R.id.action_connection_url_test -> urlTest()
+            R.id.action_full_https_test -> fullHttpsTest()
+
+            // 8, 9, 10. Авто-экспорты и тесты
+            R.id.action_github_auto_url -> runGithubAutoExport(useHttpsTest = false)
+            R.id.action_github_auto_https -> runGithubAutoExport(useHttpsTest = true)
+            R.id.action_github_auto_hardcore -> runGithubAutoExport(useHttpsTest = true)
+
+            // 11, 12. Ручные экспорты (Вызывают ваши оригинальные функции снизу файла)
+            R.id.action_github_export_selected -> runGithubExportSelected()
+            R.id.action_github_export_country -> runGithubExportByCountry()
+
+            // 13. AutoPilot
+            R.id.action_autopilot -> {
+                if (io.nekohasekai.sagernet.bg.AutoPilotService.isRunning) {
+                    io.nekohasekai.sagernet.bg.AutoPilotService.stop(requireContext())
+                    snackbar("🤖 AutoPilot останавливается...").show()
+                } else {
+                    io.nekohasekai.sagernet.bg.AutoPilotService.start(requireContext())
+                    snackbar("🤖 AutoPilot запущен в фоне!").show()
+                }
             }
 
-            R.id.action_github_auto_https -> {
-                runGithubAutoExport(useHttpsTest = true)
+            // 14. Менеджер GitHub
+            R.id.action_github_manager -> startActivity(Intent(requireActivity(), GitHubManagerActivity::class.java))
+
+            // 15. Clear unavailable
+            R.id.action_connection_test_delete_unavailable -> {
+                runOnDefaultDispatcher {
+                    val profiles = SagerDatabase.proxyDao.getByGroup(DataStore.currentGroupId())
+                    val toClear = profiles.filter { it.status != 0 && it.status != 1 }
+                    if (toClear.isNotEmpty()) {
+                        onMainDispatcher {
+                            MaterialAlertDialogBuilder(requireContext()).setTitle(R.string.confirm)
+                                .setMessage("Удалить нерабочих серверов: ${toClear.size} шт.?")
+                                .setPositiveButton(R.string.yes) { _, _ ->
+                                    runOnDefaultDispatcher {
+                                        for (profile in toClear) ProfileManager.deleteProfile(profile.groupId, profile.id)
+                                        onMainDispatcher { GroupManager.postReload(DataStore.currentGroupId()) }
+                                    }
+                                }
+                                .setNegativeButton(R.string.no, null).show()
+                        }
+                    } else onMainDispatcher { snackbar("Нет нерабочих серверов").show() }
+                }
             }
         }
         return true
@@ -700,6 +587,7 @@ class ConfigurationFragment @JvmOverloads constructor(
             }
         }
     }
+
     @OptIn(DelicateCoroutinesApi::class)
     @Suppress("EXPERIMENTAL_API_USAGE")
     fun pingTest(icmpPing: Boolean) {
@@ -871,35 +759,35 @@ class ConfigurationFragment @JvmOverloads constructor(
                 test.proxyN = profilesList.size
                 val profiles = ConcurrentLinkedQueue(profilesList)
 
-            repeat(DataStore.connectionTestConcurrent) {
-                testJobs.add(launch(Dispatchers.IO) {
-                    val urlTest = UrlTest() // note: this is NOT in bg process
-                    while (isActive) {
-                        val profile = profiles.poll() ?: break
-                        profile.status = 0
+                repeat(DataStore.connectionTestConcurrent) {
+                    testJobs.add(launch(Dispatchers.IO) {
+                        val urlTest = UrlTest() // note: this is NOT in bg process
+                        while (isActive) {
+                            val profile = profiles.poll() ?: break
+                            profile.status = 0
 
-                        try {
-                            val result = urlTest.doTest(profile)
-                            profile.status = 1
-                            profile.ping = result
-                        } catch (e: PluginManager.PluginNotFoundException) {
-                            profile.status = 2
-                            profile.error = e.readableMessage
-                        } catch (e: Exception) {
-                            profile.status = 3
-                            profile.error = e.readableMessage
+                            try {
+                                val result = urlTest.doTest(profile)
+                                profile.status = 1
+                                profile.ping = result
+                            } catch (e: PluginManager.PluginNotFoundException) {
+                                profile.status = 2
+                                profile.error = e.readableMessage
+                            } catch (e: Exception) {
+                                profile.status = 3
+                                profile.error = e.readableMessage
+                            }
+
+                            test.update(profile)
                         }
+                    })
+                }
 
-                        test.update(profile)
-                    }
-                })
-            }
+                testJobs.joinAll()
 
-            testJobs.joinAll()
-
-            runOnMainDispatcher {
-                test.cancel()
-            }
+                runOnMainDispatcher {
+                    test.cancel()
+                }
             } catch (e: Exception) {
                 Logs.w(e)
                 DataStore.runningTest = false
@@ -952,45 +840,45 @@ class ConfigurationFragment @JvmOverloads constructor(
                 val profilesList = SagerDatabase.proxyDao.getByGroup(group.id)
                 test.proxyN = profilesList.size
                 val profiles = ConcurrentLinkedQueue(profilesList)
-            repeat(DataStore.connectionTestConcurrent) {
-                testJobs.add(launch(Dispatchers.IO) {
-                    while (isActive) {
-                        val profile = profiles.poll() ?: break
-                        profile.status = 0
+                repeat(DataStore.connectionTestConcurrent) {
+                    testJobs.add(launch(Dispatchers.IO) {
+                        while (isActive) {
+                            val profile = profiles.poll() ?: break
+                            profile.status = 0
 
-                        try {
-                            val result = FullTestInstance(
-                                profile = profile,
-                                timeout = 15000,
-                                minOk = 2
-                            ).doTest()
+                            try {
+                                val result = FullTestInstance(
+                                    profile = profile,
+                                    timeout = 15000,
+                                    minOk = 2
+                                ).doTest()
 
-                            if (result.success) {
-                                profile.status = 1
-                                profile.ping = result.bestLatencyMs.toInt()
-                                profile.error = null
-                            } else {
+                                if (result.success) {
+                                    profile.status = 1
+                                    profile.ping = result.bestLatencyMs.toInt()
+                                    profile.error = null
+                                } else {
+                                    profile.status = 3
+                                    profile.error = result.error ?: "HTTPS test failed"
+                                }
+                            } catch (e: PluginManager.PluginNotFoundException) {
+                                profile.status = 2
+                                profile.error = e.readableMessage
+                            } catch (e: Exception) {
                                 profile.status = 3
-                                profile.error = result.error ?: "HTTPS test failed"
+                                profile.error = e.readableMessage
                             }
-                        } catch (e: PluginManager.PluginNotFoundException) {
-                            profile.status = 2
-                            profile.error = e.readableMessage
-                        } catch (e: Exception) {
-                            profile.status = 3
-                            profile.error = e.readableMessage
+
+                            test.update(profile)
                         }
+                    })
+                }
 
-                        test.update(profile)
-                    }
-                })
-            }
+                testJobs.joinAll()
 
-            testJobs.joinAll()
-
-            runOnMainDispatcher {
-                test.cancel()
-            }
+                runOnMainDispatcher {
+                    test.cancel()
+                }
             } catch (e: Exception) {
                 Logs.w(e)
                 DataStore.runningTest = false
@@ -1026,6 +914,7 @@ class ConfigurationFragment @JvmOverloads constructor(
             dialog.hide()
         }
     }
+
     inner class GroupPagerAdapter : FragmentStateAdapter(this),
         ProfileManager.Listener,
         GroupManager.Listener {
@@ -1806,34 +1695,45 @@ class ConfigurationFragment @JvmOverloads constructor(
             }
 
             override fun onMenuItemClick(item: MenuItem): Boolean {
-                try {
-                    currentName = entity.displayName()!!
-                    when (item.itemId) {
-                        R.id.action_standard_qr -> showCode(entity.toStdLink())
-                        R.id.action_standard_clipboard -> export(entity.toStdLink())
-                        R.id.action_universal_qr -> showCode(entity.requireBean().toUniversalLink())
-                        R.id.action_universal_clipboard -> export(
-                            entity.requireBean().toUniversalLink()
-                        )
+                // Если toUri отсутствует или был переименован, мы используем toUniversalLink() как 100% безопасный и рабочий фоллбэк для всех видов ссылок.
+                val link = entity.requireBean().toUniversalLink()
 
-                        R.id.action_config_export_clipboard -> export(entity.exportConfig().first)
-                        R.id.action_config_export_file -> {
-                            val cfg = entity.exportConfig()
-                            DataStore.serverConfig = cfg.first
-                            startFilesForResult(
-                                (parentFragment as ConfigurationFragment).exportConfig, cfg.second
-                            )
+                when (item.itemId) {
+                    R.id.action_group_qr, R.id.action_standard_qr -> {
+                        showCode(link)
+                    }
+
+                    R.id.action_group_clipboard, R.id.action_standard_clipboard -> {
+                        export(link)
+                    }
+
+                    R.id.action_group_configuration -> {
+                        runOnDefaultDispatcher {
+                            try {
+                                val text = com.google.gson.GsonBuilder().setPrettyPrinting().create().toJson(entity.requireBean())
+                                onMainDispatcher {
+                                    val dialog = MaterialAlertDialogBuilder(requireContext())
+                                        .setTitle("Configuration")
+                                        .setMessage(text)
+                                        .setPositiveButton(android.R.string.copy) { _, _ ->
+                                            export(text)
+                                        }
+                                        .setNegativeButton(android.R.string.cancel, null)
+                                        .show()
+                                    dialog.findViewById<TextView>(android.R.id.message)?.apply {
+                                        setTextIsSelectable(true)
+                                        typeface = android.graphics.Typeface.MONOSPACE
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                Logs.e(e)
+                            }
                         }
                     }
-                } catch (e: Exception) {
-                    Logs.w(e)
-                    (activity as MainActivity).snackbar(e.readableMessage).show()
-                    return true
                 }
                 return true
             }
         }
-
     }
 
     private val exportConfig =
@@ -1855,7 +1755,6 @@ class ConfigurationFragment @JvmOverloads constructor(
                             snackbar(e.readableMessage).show()
                         }
                     }
-
                 }
             }
         }
@@ -1864,6 +1763,7 @@ class ConfigurationFragment @JvmOverloads constructor(
         searchView.onActionViewCollapsed()
         searchView.clearFocus()
     }
+
     @OptIn(DelicateCoroutinesApi::class)
     fun runGithubAutoExport(useHttpsTest: Boolean) {
         if (DataStore.runningTest) {
@@ -2014,49 +1914,40 @@ class ConfigurationFragment @JvmOverloads constructor(
             dialog.hide()
         }
     }
+
     fun runGithubExportSelected() {
         val group = DataStore.currentGroup()
 
         runOnDefaultDispatcher {
-            // Получаем все прокси из текущей группы
             val allProxies = SagerDatabase.proxyDao.getByGroup(group.id)
-                .sortedBy { it.displayName() } // Сортируем по имени для удобства
 
             if (allProxies.isEmpty()) {
-                onMainDispatcher {
-                    snackbar("В этой группе нет прокси!").show()
-                }
+                onMainDispatcher { snackbar("В этой группе нет прокси!").show() }
                 return@runOnDefaultDispatcher
             }
 
-            // Массивы для диалога
-            val proxyNames = allProxies.map { it.displayName() }.toTypedArray()
-            val checkedItems = BooleanArray(allProxies.size) { false }
-            val selectedProxies = mutableListOf<ProxyEntity>()
+            val names = allProxies.map { it.displayName() }.toTypedArray()
+            val checked = BooleanArray(allProxies.size)
 
             onMainDispatcher {
                 MaterialAlertDialogBuilder(requireContext())
-                    .setTitle("Выберите прокси для экспорта")
-                    .setMultiChoiceItems(proxyNames, checkedItems) { _, which, isChecked ->
-                        checkedItems[which] = isChecked
+                    .setTitle("Выберите прокси")
+                    .setMultiChoiceItems(names, checked) { _, which, isChecked ->
+                        checked[which] = isChecked
                     }
                     .setPositiveButton("Экспорт") { _, _ ->
-                        // Собираем выбранные
-                        for (i in checkedItems.indices) {
-                            if (checkedItems[i]) {
-                                selectedProxies.add(allProxies[i])
-                            }
+                        val selected = allProxies.filterIndexed { i, _ -> checked[i] }
+
+                        if (selected.isEmpty()) {
+                            snackbar("Ничего не выбрано").show()
+                            return@setPositiveButton
                         }
 
-                        if (selectedProxies.isEmpty()) {
-                            snackbar("Вы ничего не выбрали!").show()
-                        } else {
-                            exportMultipleGroups(
-                                group.displayName(),
-                                selectedProxies,
-                                "Отправляем ${selectedProxies.size} прокси..."
-                            )
-                        }
+                        exportMultipleGroups(
+                            group.displayName(),
+                            selected,
+                            "Отправляем ${selected.size} прокси..."
+                        )
                     }
                     .setNegativeButton(android.R.string.cancel, null)
                     .show()
@@ -2070,55 +1961,98 @@ class ConfigurationFragment @JvmOverloads constructor(
             val allProxies = SagerDatabase.proxyDao.getByGroup(group.id)
 
             if (allProxies.isEmpty()) {
-                onMainDispatcher { snackbar("В этой группе нет прокси!").show() }
+                onMainDispatcher { snackbar("Нет прокси для экспорта").show() }
                 return@runOnDefaultDispatcher
             }
 
-            // Группируем прокси по странам.
-            // Мы ищем Эмодзи-флаги (например 🇩🇪) или буквенные коды (DE, US) в названии
             val countryMap = mutableMapOf<String, MutableList<ProxyEntity>>()
-
-            // Регулярное выражение для поиска эмодзи-флагов
+            // Строгое регулярное выражение: ищет ТОЛЬКО флаги стран (состоят из двух региональных символов)
             val flagRegex = Regex("[\uD83C][\uDDE6-\uDDFF][\uD83C][\uDDE6-\uDDFF]")
 
             for (proxy in allProxies) {
                 val name = proxy.displayName()
+                var categoryName = "🌍 Остальные"
 
-                // Пытаемся найти флаг
-                val flagMatch = flagRegex.find(name)
-                val countryKey = if (flagMatch != null) {
-                    // Если есть флаг — берем его и следующее слово (если есть)
-                    val flag = flagMatch.value
-                    // Попытка выцепить слово после флага (например "Германия")
-                    val afterFlag = name.substringAfter(flag).trim().split(" ").firstOrNull()?.replace(Regex("[^\\p{L}]"), "") ?: ""
-                    if (afterFlag.length > 2) "$flag $afterFlag" else flag
-                } else {
-                    // Если флага нет, берем первое длинное слово в надежде, что это страна
-                    val words = name.split(" ", "-", "_")
-                    val possibleCountry = words.find { it.length > 2 && !it.contains(Regex("\\d")) }
-                    possibleCountry ?: "Неизвестно"
+                try {
+                    val flagMatch = flagRegex.find(name)
+
+                    if (flagMatch != null) {
+                        // 1. Нашли настоящий флаг (например, 🇩🇪)
+                        val flag = flagMatch.value
+                        var countryName = ""
+
+                        // Пытаемся безопасно достать русское название страны по флагу
+                        try {
+                            val c1 = flag.codePointAt(0) - 0x1F1E6 + 'A'.code
+                            val c2 = flag.codePointAt(2) - 0x1F1E6 + 'A'.code
+                            val isoCode = "${c1.toChar()}${c2.toChar()}"
+                            val display = java.util.Locale("ru", isoCode).displayCountry
+                            // Проверяем, что Android знает эту страну
+                            if (display.length > 2) {
+                                countryName = display
+                            }
+                        } catch (e: Exception) {}
+
+                        // 2. Если Android не знает страну (или это экзотика), просто берем слово после флага
+                        if (countryName.isEmpty()) {
+                            val textAfterFlag = name.substringAfter(flag).trim()
+                            // Вытаскиваем первое слово (например, "Germany" из "Germany | 🌐")
+                            val firstWord = textAfterFlag.split(Regex("[^\\p{L}]+")).firstOrNull { it.length > 2 }
+                            countryName = firstWord ?: "Локация"
+                        }
+
+                        // Делаем первую букву заглавной для красоты
+                        countryName = countryName.replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.getDefault()) else it.toString() }
+                        categoryName = "$flag $countryName"
+                    } else {
+                        // 3. Резервный поиск по английским словам для серверов ВООБЩЕ БЕЗ флагов
+                        val upper = name.uppercase()
+                        when {
+                            upper.contains("GERMANY") || upper.contains(" DE ") -> categoryName = "🇩🇪 Германия"
+                            upper.contains("FINLAND") || upper.contains(" FI ") -> categoryName = "🇫🇮 Финляндия"
+                            upper.contains("RUSSIA") || upper.contains(" RU ") -> categoryName = "🇷🇺 Россия"
+                            upper.contains("UNITED STATES") || upper.contains(" US ") -> categoryName = "🇺🇸 США"
+                            upper.contains("NETHERLANDS") || upper.contains(" NL ") -> categoryName = "🇳🇱 Нидерланды"
+                            upper.contains("FRANCE") || upper.contains(" FR ") -> categoryName = "🇫🇷 Франция"
+                            upper.contains("KINGDOM") || upper.contains(" UK ") || upper.contains(" GB ") -> categoryName = "🇬🇧 Великобритания"
+                            upper.contains("TURKEY") || upper.contains(" TR ") -> categoryName = "🇹🇷 Турция"
+                            upper.contains("POLAND") || upper.contains(" PL ") -> categoryName = "🇵🇱 Польша"
+                            upper.contains("SWEDEN") || upper.contains(" SE ") -> categoryName = "🇸🇪 Швеция"
+                        }
+                    }
+                } catch (e: Exception) {
+                    Logs.e("Ошибка парсинга страны", e)
                 }
 
-                if (!countryMap.containsKey(countryKey)) {
-                    countryMap[countryKey] = mutableListOf()
-                }
-                countryMap[countryKey]?.add(proxy)
+                // Складываем в нужную папку
+                countryMap.getOrPut(categoryName) { mutableListOf() }.add(proxy)
             }
 
-            val countryNames = countryMap.keys.toTypedArray()
+            // Сортируем список стран по алфавиту для диалога
+            val keys = countryMap.keys.toTypedArray()
+            keys.sort()
 
             onMainDispatcher {
+                var selectedIndex = -1
+
                 MaterialAlertDialogBuilder(requireContext())
                     .setTitle("Выберите страну для экспорта")
-                    .setItems(countryNames) { _, which ->
-                        val selectedCountry = countryNames[which]
-                        val proxiesToExport = countryMap[selectedCountry] ?: return@setItems
+                    .setSingleChoiceItems(keys, -1) { _, i ->
+                        selectedIndex = i
+                    }
+                    .setPositiveButton("Экспорт") { _, _ ->
+                        if (selectedIndex == -1) {
+                            snackbar("Вы ничего не выбрали!").show()
+                            return@setPositiveButton
+                        }
 
-                        val blockName = "${group.displayName()} - $selectedCountry"
+                        val selectedCountry = keys[selectedIndex]
+                        val listToExport = countryMap[selectedCountry]!!
+
                         exportMultipleGroups(
-                            blockName,
-                            proxiesToExport,
-                            "Отправляем ${proxiesToExport.size} прокси ($selectedCountry)..."
+                            "${group.displayName()} - $selectedCountry",
+                            listToExport,
+                            "Отправка ${listToExport.size} прокси ($selectedCountry)..."
                         )
                     }
                     .setNegativeButton(android.R.string.cancel, null)
@@ -2128,26 +2062,28 @@ class ConfigurationFragment @JvmOverloads constructor(
     }
 
     private fun exportMultipleGroups(
-        blockName: String,
-        proxiesToExport: List<ProxyEntity>,
-        progressMessage: String
+        name: String,
+        list: List<ProxyEntity>,
+        msg: String
     ) {
-        val progressDialog = MaterialAlertDialogBuilder(requireContext())
-            .setTitle("Выгрузка на GitHub")
-            .setMessage(progressMessage)
+        val dialog = MaterialAlertDialogBuilder(requireContext())
+            .setTitle("GitHub")
+            .setMessage(msg)
             .setCancelable(false)
             .show()
 
         runOnDefaultDispatcher {
-            val result = GitHubExporter.exportGroup(blockName, proxiesToExport)
-            runOnMainDispatcher {
-                progressDialog.dismiss()
+            val result = io.nekohasekai.sagernet.utils.GitHubExporter.exportGroup(name, list)
+
+            onMainDispatcher {
+                dialog.dismiss()
                 MaterialAlertDialogBuilder(requireContext())
-                    .setTitle(if (result.success) "Успех!" else "Ошибка выгрузки")
+                    .setTitle(if (result.success) "Успех" else "Ошибка")
                     .setMessage(result.message)
                     .setPositiveButton(android.R.string.ok, null)
                     .show()
             }
         }
     }
+
 }
