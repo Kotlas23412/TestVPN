@@ -452,7 +452,7 @@ class ConfigurationFragment @JvmOverloads constructor(
             R.id.action_github_auto_https -> runGithubAutoExport(useHttpsTest = true)
             R.id.action_github_auto_hardcore -> runGithubAutoExport(useHttpsTest = true)
 
-            // 11, 12. Ручные экспорты (Вызывают ваши оригинальные функции снизу файла)
+            // 11, 12. Ручные экспорты (Вызывают ваши оригинальные функции)
             R.id.action_github_export_selected -> runGithubExportSelected()
             R.id.action_github_export_country -> runGithubExportByCountry()
 
@@ -462,8 +462,47 @@ class ConfigurationFragment @JvmOverloads constructor(
                     io.nekohasekai.sagernet.bg.AutoPilotService.stop(requireContext())
                     snackbar("🤖 AutoPilot останавливается...").show()
                 } else {
-                    io.nekohasekai.sagernet.bg.AutoPilotService.start(requireContext())
-                    snackbar("🤖 AutoPilot запущен в фоне!").show()
+                    try {
+                        val dialogView = LayoutInflater.from(requireContext()).inflate(R.layout.dialog_autopilot_settings, null)
+
+                        val limitInput = dialogView.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.ap_limit)
+                        val healthIntervalInput = dialogView.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.ap_health_interval)
+                        val maxPingInput = dialogView.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.ap_max_ping)
+                        val combineCheck = dialogView.findViewById<android.widget.CheckBox>(R.id.ap_combine)
+                        val whitelistCheck = dialogView.findViewById<android.widget.CheckBox>(R.id.ap_strict_whitelist)
+
+                        limitInput.setText(DataStore.autoPilotExportLimit.toString())
+                        healthIntervalInput.setText(DataStore.autoPilotHealthInterval.toString())
+                        maxPingInput.setText(DataStore.autoPilotMaxPing.toString())
+                        combineCheck.isChecked = DataStore.autoPilotCombine
+                        whitelistCheck.isChecked = DataStore.autoPilotStrictWhitelist
+
+                        MaterialAlertDialogBuilder(requireContext())
+                            .setTitle("🤖 Настройки AutoPilot")
+                            .setView(dialogView)
+                            .setPositiveButton("ЗАПУСТИТЬ") { _, _ ->
+                                try {
+                                    DataStore.autoPilotExportLimit = limitInput.text.toString().toIntOrNull() ?: 10
+                                    DataStore.autoPilotHealthInterval = healthIntervalInput.text.toString().toIntOrNull() ?: 10
+                                    DataStore.autoPilotMaxPing = maxPingInput.text.toString().toIntOrNull() ?: 3000
+                                    DataStore.autoPilotCombine = combineCheck.isChecked
+                                    DataStore.autoPilotStrictWhitelist = whitelistCheck.isChecked
+
+                                    // Передаем скрипту ID ТЕКУЩЕЙ ОТКРЫТОЙ ГРУППЫ
+                                    DataStore.autoPilotGroupIds = DataStore.currentGroupId().toString()
+                                } catch (e: Exception) {
+                                    Logs.w(e)
+                                }
+
+                                io.nekohasekai.sagernet.bg.AutoPilotService.start(requireContext())
+                                snackbar("🤖 AutoPilot запущен в фоне!").show()
+                            }
+                            .setNegativeButton("Отмена", null)
+                            .show()
+                    } catch (e: Exception) {
+                        Logs.e("Ошибка меню AutoPilot", e)
+                        snackbar("Ошибка: не найден layout/dialog_autopilot_settings.xml").show()
+                    }
                 }
             }
 
@@ -1954,6 +1993,7 @@ class ConfigurationFragment @JvmOverloads constructor(
             }
         }
     }
+
     fun runGithubExportByCountry() {
         val group = DataStore.currentGroup()
 
@@ -1966,7 +2006,6 @@ class ConfigurationFragment @JvmOverloads constructor(
             }
 
             val countryMap = mutableMapOf<String, MutableList<ProxyEntity>>()
-            // Строгое регулярное выражение: ищет ТОЛЬКО флаги стран (состоят из двух региональных символов)
             val flagRegex = Regex("[\uD83C][\uDDE6-\uDDFF][\uD83C][\uDDE6-\uDDFF]")
 
             for (proxy in allProxies) {
@@ -1977,35 +2016,28 @@ class ConfigurationFragment @JvmOverloads constructor(
                     val flagMatch = flagRegex.find(name)
 
                     if (flagMatch != null) {
-                        // 1. Нашли настоящий флаг (например, 🇩🇪)
                         val flag = flagMatch.value
                         var countryName = ""
 
-                        // Пытаемся безопасно достать русское название страны по флагу
                         try {
                             val c1 = flag.codePointAt(0) - 0x1F1E6 + 'A'.code
                             val c2 = flag.codePointAt(2) - 0x1F1E6 + 'A'.code
                             val isoCode = "${c1.toChar()}${c2.toChar()}"
                             val display = java.util.Locale("ru", isoCode).displayCountry
-                            // Проверяем, что Android знает эту страну
                             if (display.length > 2) {
                                 countryName = display
                             }
                         } catch (e: Exception) {}
 
-                        // 2. Если Android не знает страну (или это экзотика), просто берем слово после флага
                         if (countryName.isEmpty()) {
                             val textAfterFlag = name.substringAfter(flag).trim()
-                            // Вытаскиваем первое слово (например, "Germany" из "Germany | 🌐")
                             val firstWord = textAfterFlag.split(Regex("[^\\p{L}]+")).firstOrNull { it.length > 2 }
                             countryName = firstWord ?: "Локация"
                         }
 
-                        // Делаем первую букву заглавной для красоты
                         countryName = countryName.replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.getDefault()) else it.toString() }
                         categoryName = "$flag $countryName"
                     } else {
-                        // 3. Резервный поиск по английским словам для серверов ВООБЩЕ БЕЗ флагов
                         val upper = name.uppercase()
                         when {
                             upper.contains("GERMANY") || upper.contains(" DE ") -> categoryName = "🇩🇪 Германия"
@@ -2024,11 +2056,9 @@ class ConfigurationFragment @JvmOverloads constructor(
                     Logs.e("Ошибка парсинга страны", e)
                 }
 
-                // Складываем в нужную папку
                 countryMap.getOrPut(categoryName) { mutableListOf() }.add(proxy)
             }
 
-            // Сортируем список стран по алфавиту для диалога
             val keys = countryMap.keys.toTypedArray()
             keys.sort()
 
