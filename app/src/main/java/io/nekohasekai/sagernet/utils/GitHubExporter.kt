@@ -288,46 +288,27 @@ object GitHubExporter {
      */
     private fun ProxyEntity.toNormalizedStandardLink(index: Int, updateBean: Boolean): String {
         val bean = requireBean()
-        val originalName = bean.name ?: "Unknown"
+        val originalName = (bean.name ?: "").ifBlank { displayName() }.ifBlank { "Unknown" }
         val upperName = originalName.uppercase()
 
         var flag = "🌍"
         var countryName = "Локация"
+        var resolved = false
 
-        val flagRegex = Regex("[\uD83C][\uDDE6-\uDDFF][\uD83C][\uDDE6-\uDDFF]")
-        val flagMatch = flagRegex.find(originalName)
+        CountryCatalog.resolveFromText(originalName)?.let { country ->
+            if (country.flag.isNotBlank()) flag = country.flag
+            countryName = country.countryNameRu
+            resolved = true
+        }
 
-        if (flagMatch != null) {
-            flag = flagMatch.value
+        if (!resolved) {
             try {
-                val c1 = flag.codePointAt(0) - 0x1F1E6 + 'A'.code
-                val c2 = flag.codePointAt(2) - 0x1F1E6 + 'A'.code
-                countryName = java.util.Locale("ru", "${c1.toChar()}${c2.toChar()}").displayCountry
-            } catch (_: Exception) {}
-        } else {
-            when {
-                upperName.contains("RUSSIA") || upperName.contains(" RU ") || upperName.contains("-RU") -> { flag = "🇷🇺"; countryName = "Россия" }
-                upperName.contains("GERMANY") || upperName.contains(" DE ") || upperName.contains("-DE") -> { flag = "🇩🇪"; countryName = "Германия" }
-                upperName.contains("FINLAND") || upperName.contains(" FI ") || upperName.contains("-FI") -> { flag = "🇫🇮"; countryName = "Финляндия" }
-                upperName.contains("UNITED STATES") || upperName.contains(" US ") || upperName.contains("-US") -> { flag = "🇺🇸"; countryName = "США" }
-                upperName.contains("NETHERLANDS") || upperName.contains(" NL ") || upperName.contains("-NL") -> { flag = "🇳🇱"; countryName = "Нидерланды" }
-                upperName.contains("FRANCE") || upperName.contains(" FR ") || upperName.contains("-FR") -> { flag = "🇫🇷"; countryName = "Франция" }
-                upperName.contains("KINGDOM") || upperName.contains(" UK ") || upperName.contains(" GB ") -> { flag = "🇬🇧"; countryName = "Великобритания" }
-                upperName.contains("TURKEY") || upperName.contains(" TR ") || upperName.contains("-TR") -> { flag = "🇹🇷"; countryName = "Турция" }
-                upperName.contains("POLAND") || upperName.contains(" PL ") || upperName.contains("-PL") -> { flag = "🇵🇱"; countryName = "Польша" }
-                upperName.contains("SWEDEN") || upperName.contains(" SE ") || upperName.contains("-SE") -> { flag = "🇸🇪"; countryName = "Швеция" }
-                else -> {
-                    try {
-                        val ipCode = moe.matsuri.nb4a.utils.GeoIPHelper.detectCountryByIpOffline(bean.serverAddress ?: "")
-                        if (!ipCode.isNullOrBlank() && ipCode.length == 2 && ipCode != "XX") {
-                            val c1 = ipCode[0].uppercaseChar().code - 'A'.code + 0x1F1E6
-                            val c2 = ipCode[1].uppercaseChar().code - 'A'.code + 0x1F1E6
-                            flag = String(Character.toChars(c1)) + String(Character.toChars(c2))
-                            countryName = java.util.Locale("ru", ipCode).displayCountry
-                        }
-                    } catch (_: Exception) {}
+                val ipCode = moe.matsuri.nb4a.utils.GeoIPHelper.detectCountryByIpOffline(bean.serverAddress ?: "")
+                CountryCatalog.fromCode(ipCode)?.let { country ->
+                    if (country.flag.isNotBlank()) flag = country.flag
+                    countryName = country.countryNameRu
                 }
-            }
+            } catch (_: Exception) {}
         }
 
         if (countryName.isBlank() || countryName == "Unknown") countryName = "Локация"
