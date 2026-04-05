@@ -2112,26 +2112,61 @@ class ConfigurationFragment @JvmOverloads constructor(
             keys.sort()
 
             onMainDispatcher {
-                var selectedIndex = -1
+                val checked = BooleanArray(keys.size)
 
                 MaterialAlertDialogBuilder(requireContext())
-                    .setTitle("Выберите страну для экспорта")
-                    .setSingleChoiceItems(keys, -1) { _, i ->
-                        selectedIndex = i
+                    .setTitle("Выберите страны (экспорт: топ-2 по пингу на страну)")
+                    .setMultiChoiceItems(keys, checked) { _, which, isChecked ->
+                        checked[which] = isChecked
+                    }
+                    .setNeutralButton("Выбрать все") { _, _ ->
+                        for (i in checked.indices) checked[i] = true
+                        val selectedCountries = keys.toList()
+                        val bestByCountry = selectedCountries.flatMap { country ->
+                            countryMap[country].orEmpty()
+                                .sortedWith(
+                                    compareBy<ProxyEntity> { if (it.ping > 0) it.ping else Int.MAX_VALUE }
+                                        .thenBy { it.displayName() }
+                                )
+                                .take(2)
+                        }
+                        if (bestByCountry.isEmpty()) {
+                            snackbar("Нет прокси для экспорта").show()
+                            return@setNeutralButton
+                        }
+                        exportMultipleGroups(
+                            "${group.displayName()} - all countries",
+                            bestByCountry,
+                            "Отправка ${bestByCountry.size} прокси (по 2 лучших на страну)..."
+                        )
                     }
                     .setPositiveButton("Экспорт") { _, _ ->
-                        if (selectedIndex == -1) {
+                        val selectedCountries = keys.filterIndexed { index, _ -> checked[index] }
+                        if (selectedCountries.isEmpty()) {
                             snackbar("Вы ничего не выбрали!").show()
                             return@setPositiveButton
                         }
 
-                        val selectedCountry = keys[selectedIndex]
-                        val listToExport = countryMap[selectedCountry]!!
+                        val bestByCountry = selectedCountries.flatMap { country ->
+                            val countryProxies = countryMap[country].orEmpty()
+                            countryProxies
+                                .sortedWith(
+                                    compareBy<ProxyEntity> { if (it.ping > 0) it.ping else Int.MAX_VALUE }
+                                        .thenBy { it.displayName() }
+                                )
+                                .take(2)
+                        }
 
+                        if (bestByCountry.isEmpty()) {
+                            snackbar("Нет прокси для экспорта").show()
+                            return@setPositiveButton
+                        }
+
+                        val countriesLabel = selectedCountries.joinToString(", ")
                         exportMultipleGroups(
-                            "${group.displayName()} - $selectedCountry",
-                            listToExport,
-                            "Отправка ${listToExport.size} прокси ($selectedCountry)..."
+                            "${group.displayName()} - ${selectedCountries.size} countries",
+                            bestByCountry,
+                            "Отправка ${bestByCountry.size} прокси (по 2 лучших на страну: $countriesLabel)..."
                         )
                     }
                     .setNegativeButton(android.R.string.cancel, null)
