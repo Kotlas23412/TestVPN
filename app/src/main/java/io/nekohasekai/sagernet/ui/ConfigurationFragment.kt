@@ -2119,6 +2119,29 @@ class ConfigurationFragment @JvmOverloads constructor(
                     .setMultiChoiceItems(keys, checked) { _, which, isChecked ->
                         checked[which] = isChecked
                     }
+
+                    .setNeutralButton("Выбрать все") { _, _ ->
+                        for (i in checked.indices) checked[i] = true
+                        val selectedCountries = keys.toList()
+                        val bestByCountry = selectedCountries.flatMap { country ->
+                            countryMap[country].orEmpty()
+                                .sortedWith(
+                                    compareBy<ProxyEntity> { if (it.ping > 0) it.ping else Int.MAX_VALUE }
+                                        .thenBy { it.displayName() }
+                                )
+                                .take(2)
+                        }
+                        if (bestByCountry.isEmpty()) {
+                            snackbar("Нет прокси для экспорта").show()
+                            return@setNeutralButton
+                        }
+                        exportMultipleGroups(
+                            "${group.displayName()} - all countries",
+                            bestByCountry,
+                            "Отправка ${bestByCountry.size} прокси (по 2 лучших на страну)..."
+                        )
+                    }
+
                     .setPositiveButton("Экспорт") { _, _ ->
                         val selectedCountries = keys.filterIndexed { index, _ -> checked[index] }
                         if (selectedCountries.isEmpty()) {
@@ -2145,7 +2168,9 @@ class ConfigurationFragment @JvmOverloads constructor(
                         exportMultipleGroups(
                             "${group.displayName()} - ${selectedCountries.size} countries",
                             bestByCountry,
-                            "Отправка ${bestByCountry.size} прокси (топ-2: $countriesLabel)..."
+
+                            "Отправка ${bestByCountry.size} прокси (по 2 лучших на страну: $countriesLabel)..."
+
                         )
                     }
                     .setNegativeButton(android.R.string.cancel, null)

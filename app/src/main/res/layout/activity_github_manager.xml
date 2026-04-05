@@ -5,15 +5,16 @@
     android:layout_height="match_parent"
     android:orientation="vertical">
 
-    <com.google.android.material.appbar.MaterialToolbar
+
+    <androidx.appcompat.widget.Toolbar
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
-        android:background="?attr/colorSurface"
+        android:background="#F5F5F5"
         android:elevation="4dp"
         app:title="Менеджер GitHub"
-        app:titleTextColor="?attr/primaryOrTextPrimary"
-        app:navigationIconTint="?attr/primaryOrTextPrimary"
+        app:titleTextColor="#212121"
+
         app:navigationIcon="@drawable/ic_navigation_close" />
 
     <LinearLayout
