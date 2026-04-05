@@ -2119,6 +2119,7 @@ class ConfigurationFragment @JvmOverloads constructor(
                     .setMultiChoiceItems(keys, checked) { _, which, isChecked ->
                         checked[which] = isChecked
                     }
+
                     .setNeutralButton("Выбрать все") { _, _ ->
                         for (i in checked.indices) checked[i] = true
                         val selectedCountries = keys.toList()
@@ -2140,6 +2141,7 @@ class ConfigurationFragment @JvmOverloads constructor(
                             "Отправка ${bestByCountry.size} прокси (по 2 лучших на страну)..."
                         )
                     }
+
                     .setPositiveButton("Экспорт") { _, _ ->
                         val selectedCountries = keys.filterIndexed { index, _ -> checked[index] }
                         if (selectedCountries.isEmpty()) {
@@ -2166,7 +2168,9 @@ class ConfigurationFragment @JvmOverloads constructor(
                         exportMultipleGroups(
                             "${group.displayName()} - ${selectedCountries.size} countries",
                             bestByCountry,
+
                             "Отправка ${bestByCountry.size} прокси (по 2 лучших на страну: $countriesLabel)..."
+
                         )
                     }
                     .setNegativeButton(android.R.string.cancel, null)

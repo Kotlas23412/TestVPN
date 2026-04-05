@@ -34,6 +34,13 @@ jobs:
       - name: Native Build (LibCore)
         run: bash ./run lib core
 
+      # ИЩЕМ И СОХРАНЯЕМ ГОТОВОЕ ЯДРО ДЛЯ ПК
+      - name: Upload AAR for Android Studio
+        uses: actions/upload-artifact@v4
+        with:
+          name: Core-Libraries
+          path: ./**/*.aar
+
       # 4. СБОРКА ANDROID APK
       - name: Gradle Build
         env:
