@@ -1,10 +1,9 @@
 package io.nekohasekai.sagernet.utils
 
+import android.annotation.SuppressLint
 import android.util.Base64
 import io.nekohasekai.sagernet.database.DataStore
 import io.nekohasekai.sagernet.database.ProxyEntity
-import io.nekohasekai.sagernet.fmt.AbstractBean
-import io.nekohasekai.sagernet.fmt.toUniversalLink
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -12,24 +11,16 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
-import java.net.InetAddress
-import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.Locale
-import java.util.TimeZone
 
 object GitHubExporter {
 
     private val client = OkHttpClient()
-    // Кэш стран, чтобы не спамить запросами для одинаковых IP
-    private val countryCache = HashMap<String, CountryInfo?>()
-    private val flagRegex = Regex("[\\uD83C][\\uDDE6-\\uDDFF][\\uD83C][\\uDDE6-\\uDDFF]")
 
     data class ExportResult(val success: Boolean, val message: String)
-    data class CountryInfo(val code: String, val name: String)
 
     /**
-     * Выполняет "умный" экспорт прокси на GitHub с авто-переименованием.
+     * Выполняет экспорт прокси на GitHub с авто-переименованием.
      */
     suspend fun exportGroup(
         groupName: String,
@@ -47,7 +38,7 @@ object GitHubExporter {
         val apiUrl = "https://api.github.com/repos/$repo/contents/$path"
 
         try {
-            // 1. Получаем текущий файл (чтобы узнать его SHA и текущий текст)
+            // 1. Получаем текущий файл
             val getReq = Request.Builder()
                 .url(apiUrl)
                 .addHeader("Authorization", "Bearer $token")
@@ -75,27 +66,32 @@ object GitHubExporter {
             // 2. Формируем новый блок прокси для текущей группы
             val newGroupBlock = buildString {
                 appendLine("# === BEGIN $groupName ===")
-                for (p in proxies) {
-                    appendLine(p.toNormalizedLink())
+                for ((index, p) in proxies.withIndex()) {
+                    try {
+                        // ПРЕВРАЩАЕМ В КРАСИВЫЙ СТАНДАРТНЫЙ ЛИНК
+                        appendLine(p.toNormalizedStandardLink(index))
+                    } catch (e: Exception) {
+                        // Игнорируем битые прокси
+                    }
                 }
                 append("# === END $groupName ===")
             }
 
             // 3. Интегрируем блок в существующий текст
-            val updatedText = if (currentText.isEmpty()) {
-                newGroupBlock
+            var updatedText = currentText
+            if (updatedText.isEmpty()) {
+                updatedText = newGroupBlock
             } else {
                 val regex = Regex("# === BEGIN $groupName ===.*?# === END $groupName ===", RegexOption.DOT_MATCHES_ALL)
-                if (currentText.contains(regex)) {
-                    currentText.replace(regex, newGroupBlock)
+                if (updatedText.contains(regex)) {
+                    updatedText = updatedText.replace(regex, newGroupBlock)
                 } else {
-                    currentText + "\n\n" + newGroupBlock
+                    updatedText = updatedText.trimEnd() + "\n\n" + newGroupBlock
                 }
             }
 
             // 4. Считаем общее количество прокси
-            val lines = updatedText.lines()
-            val cleanLines = lines.filter { !it.startsWith("#") && it.contains("://") }
+            val cleanLines = updatedText.lines().filter { !it.startsWith("#") && it.contains("://") }
             totalProxiesInFile = cleanLines.size
 
             // 5. Отправляем обновленный файл на GitHub
@@ -104,9 +100,7 @@ object GitHubExporter {
             val putBody = JSONObject().apply {
                 put("message", "Auto-update group: $groupName")
                 put("content", finalBase64)
-                if (fileSha.isNotEmpty()) {
-                    put("sha", fileSha)
-                }
+                if (fileSha.isNotEmpty()) put("sha", fileSha)
             }
 
             val putReq = Request.Builder()
@@ -120,7 +114,7 @@ object GitHubExporter {
                 if (response.isSuccessful) {
                     return@withContext ExportResult(true, "Успешно выгружено $totalProxiesInFile прокси на GitHub!")
                 } else {
-                    return@withContext ExportResult(false, "Ошибка отправки: ${response.code} ${response.body?.string()}")
+                    return@withContext ExportResult(false, "Ошибка отправки: ${response.code}")
                 }
             }
 
@@ -130,119 +124,52 @@ object GitHubExporter {
     }
 
     /**
-     * Меняет имя и сразу конвертирует в ссылку
+     * Меняет имя, добавляет номер и генерирует СТАНДАРТНУЮ ссылку (vless:// и т.д.)
      */
-    private fun ProxyEntity.toNormalizedLink(): String {
+    @SuppressLint("DefaultLocale")
+    private fun ProxyEntity.toNormalizedStandardLink(index: Int): String {
         val bean = requireBean()
-        val normalizedName = buildProxyName(bean)
-        bean.name = normalizedName // перезаписываем имя
-        return bean.toUniversalLink() // генерируем ссылку
-    }
+        val originalName = bean.name ?: "Unknown"
 
-    private fun buildProxyName(bean: AbstractBean): String {
-        val country = detectCountry(bean)
-        val countryInfo = country ?: detectCountryFromName(bean.name.orEmpty())
+        // Используем 100% оффлайн систему NekoBox для поиска страны
+        var countryCode = moe.matsuri.nb4a.utils.GeoIPHelper.extractCountryFromOriginalName(originalName)
 
-        val flag = if (countryInfo != null) countryCodeToFlag(countryInfo.code) else "\uD83C\uDFF3️"
-        val countryName = countryInfo?.name ?: "Unknown"
-        val lte = if (isCidrProxy(bean)) " | LTE" else ""
-
-        return "$flag $countryName$lte"
-    }
-
-    private fun detectCountry(bean: AbstractBean): CountryInfo? {
-        val host = bean.serverAddress?.trim().orEmpty().removePrefix("[").removeSuffix("]")
-        if (host.isBlank()) return null
-
-        // Смотрим в кэш
-        countryCache[host]?.let { return it }
-
-        val ip = if (isIpAddress(host)) {
-            host
-        } else {
-            try {
-                InetAddress.getByName(host).hostAddress ?: host
-            } catch (_: Exception) {
-                host
-            }
+        if (countryCode == "Unknown" || countryCode.isBlank()) {
+            val serverAddr = bean.serverAddress ?: ""
+            // Если по имени не нашли, NekoBox сам проверит IP-адрес по оффлайн-базе geoip.dat!
+            val ipCode = moe.matsuri.nb4a.utils.GeoIPHelper.detectCountryByIpOffline(serverAddr)
+            countryCode = moe.matsuri.nb4a.utils.GeoIPHelper.buildBaseName(ipCode)
         }
 
-        val resolved = requestCountryByIp(ip)
-        countryCache[host] = resolved
-        if (ip != host) countryCache[ip] = resolved
-        return resolved
-    }
-
-    private fun requestCountryByIp(ip: String): CountryInfo? {
-        if (ip.isBlank() || ip.contains("/")) return null
-        return try {
-            val req = Request.Builder()
-                .url("https://ipwho.is/$ip")
-                .get()
-                .build()
-            client.newCall(req).execute().use { response ->
-                if (!response.isSuccessful) return null
-                val json = JSONObject(response.body?.string().orEmpty())
-                if (!json.optBoolean("success", false)) return null
-                val code = json.optString("country_code").uppercase(Locale.US)
-                val name = json.optString("country")
-                if (code.length == 2 && name.isNotBlank()) CountryInfo(code, name) else null
+        // Делаем красивый флаг и русское имя
+        val flag = countryCodeToFlag(countryCode)
+        var countryName = "Локация"
+        try {
+            if (countryCode.length == 2) {
+                countryName = java.util.Locale("ru", countryCode).displayCountry
             }
-        } catch (_: Exception) {
-            null
-        }
-    }
+        } catch (_: Exception) {}
 
-    private fun detectCountryFromName(name: String): CountryInfo? {
-        val text = name.trim()
-        val flag = flagRegex.find(text)?.value
-        if (flag != null) {
-            val code = flagToCountryCode(flag)
-            val countryName = text.substringAfter(flag).trim()
-                .split("|")
-                .firstOrNull()
-                ?.trim()
-                ?.replace(Regex("[^\\p{L} .'-]"), "")
-                .orEmpty()
-            if (code.isNotBlank()) {
-                return CountryInfo(code, countryName.ifBlank { code })
-            }
-        }
-        return null
-    }
+        // Определяем CIDR / LTE
+        val upperName = originalName.uppercase()
+        val isLte = bean.serverAddress?.contains("/") == true || upperName.contains("CIDR") || upperName.contains("LTE")
+        val lteSuffix = if (isLte) " | LTE" else ""
 
-    private fun isCidrProxy(bean: AbstractBean): Boolean {
-        val host = bean.serverAddress.orEmpty()
-        val name = bean.name.orEmpty()
-        return host.contains("/") || name.contains("cidr", ignoreCase = true)
-    }
+        // Добавляем номер (01, 02), чтобы ссылки не склеивались при импорте
+        val num = String.format("%02d", index + 1)
 
-    private fun isIpAddress(value: String): Boolean {
-        val ipv4 = Regex("^((25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)\\.){3}(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)$")
-        val ipv6 = Regex("^[0-9a-fA-F:]+$")
-        return ipv4.matches(value) || ipv6.matches(value)
+        // Применяем новое идеальное имя
+        bean.name = "$flag $countryName$lteSuffix $num"
+
+        // ВОТ ОНО! toStdLink() заставит NekoBox выдать чистый vless:// без sn://
+        return toStdLink()
     }
 
     private fun countryCodeToFlag(countryCode: String): String {
         val code = countryCode.uppercase(Locale.US)
-        if (code.length != 2 || !code.all { it in 'A'..'Z' }) return "\uD83C\uDFF3️"
+        if (code.length != 2 || !code.all { it in 'A'..'Z' }) return "🌍"
         val first = Character.codePointAt(code, 0) - 'A'.code + 0x1F1E6
         val second = Character.codePointAt(code, 1) - 'A'.code + 0x1F1E6
         return String(Character.toChars(first)) + String(Character.toChars(second))
-    }
-
-    private fun flagToCountryCode(flag: String): String {
-        if (flag.length < 4) return "" // Флаг должен состоять как минимум из 4 char (2 суррогатные пары)
-
-        // Извлекаем кодовые точки с учетом суррогатных пар для API 21+
-        val firstCp = Character.codePointAt(flag, 0)
-        val secondCp = Character.codePointAt(flag, 2)
-
-        val first = firstCp - 0x1F1E6 + 'A'.code
-        val second = secondCp - 0x1F1E6 + 'A'.code
-
-        if (first !in 'A'.code..'Z'.code || second !in 'A'.code..'Z'.code) return ""
-
-        return "${first.toChar()}${second.toChar()}"
     }
 }
