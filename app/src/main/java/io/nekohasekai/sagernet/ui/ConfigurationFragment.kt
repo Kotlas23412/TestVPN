@@ -2005,9 +2005,16 @@ class ConfigurationFragment @JvmOverloads constructor(
 
     fun runGithubExportSelected() {
         runOnDefaultDispatcher {
+            // Получаем прокси с учетом текущей сортировки группы
+            val group = DataStore.currentGroup()
+            var allProxies = SagerDatabase.proxyDao.getByGroup(group.id)
 
-            // Важно: сохраняем исходный порядок из конфига/группы, без дополнительной сортировки.
-            val allProxies = SagerDatabase.proxyDao.getByGroup(DataStore.currentGroupId())
+            // Применяем сортировку в соответствии с настройками группы
+            allProxies = when (group.order) {
+                GroupOrder.BY_NAME -> allProxies.sortedBy { it.displayName() }
+                GroupOrder.BY_DELAY -> allProxies.sortedBy { if (it.status == 1) it.ping else 114514 }
+                else -> allProxies // GroupOrder.ORIGIN - исходный порядок
+            }
 
             if (allProxies.isEmpty()) {
                 onMainDispatcher { snackbar("В этой группе нет прокси!").show() }
