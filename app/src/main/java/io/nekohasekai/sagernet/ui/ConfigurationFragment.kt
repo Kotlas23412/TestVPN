@@ -442,120 +442,14 @@ class ConfigurationFragment @JvmOverloads constructor(
                 }
             }
 
-            // 5, 6, 7. Тесты
+            // 5, 6. Тесты
             R.id.action_connection_tcp_ping -> pingTest(false)
             R.id.action_connection_url_test -> urlTest()
-            R.id.action_full_https_test -> fullHttpsTest()
 
-            // 8, 9, 10. Авто-экспорты и тесты
-            R.id.action_github_auto_url -> runGithubAutoExport(useHttpsTest = false)
-            R.id.action_github_auto_https -> runGithubAutoExport(useHttpsTest = true)
-            R.id.action_github_auto_hardcore -> runGithubAutoExport(useHttpsTest = true)
-
-            // 11, 12. Ручные экспорты (Вызывают ваши оригинальные функции)
+            // 7, 8. Ручные экспорты
             R.id.action_github_export_selected -> runGithubExportSelected()
             R.id.action_github_export_country -> runGithubExportByCountry()
-
-            // === 13. ПЕРЕКЛЮЧАТЕЛЬ AUTOPILOT (Настройки + Выбор групп + Подсчет прокси) ===
-            R.id.action_autopilot -> {
-                if (io.nekohasekai.sagernet.bg.AutoPilotService.isRunning) {
-                    io.nekohasekai.sagernet.bg.AutoPilotService.stop(requireContext())
-                    snackbar("🤖 AutoPilot останавливается...").show()
-                } else {
-                    try {
-                        val dialogView = LayoutInflater.from(requireContext()).inflate(R.layout.dialog_autopilot_settings, null)
-
-                        val limitInput = dialogView.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.ap_limit)
-                        val healthIntervalInput = dialogView.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.ap_health_interval)
-                        val maxPingInput = dialogView.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.ap_max_ping)
-                        val combineCheck = dialogView.findViewById<android.widget.CheckBox>(R.id.ap_combine)
-                        val whitelistCheck = dialogView.findViewById<android.widget.CheckBox>(R.id.ap_strict_whitelist)
-
-                        limitInput.setText(DataStore.autoPilotExportLimit.toString())
-                        healthIntervalInput.setText(DataStore.autoPilotHealthInterval.toString())
-                        maxPingInput.setText(DataStore.autoPilotMaxPing.toString())
-                        combineCheck.isChecked = DataStore.autoPilotCombine
-                        whitelistCheck.isChecked = DataStore.autoPilotStrictWhitelist
-
-                        // Окно 1: Настройки
-                        MaterialAlertDialogBuilder(requireContext())
-                            .setTitle("🤖 Настройки AutoPilot")
-                            .setView(dialogView)
-                            .setPositiveButton("ДАЛЕЕ") { _, _ ->
-                                try {
-                                    DataStore.autoPilotExportLimit = limitInput.text.toString().toIntOrNull() ?: 10
-                                    DataStore.autoPilotHealthInterval = healthIntervalInput.text.toString().toIntOrNull() ?: 10
-                                    DataStore.autoPilotMaxPing = maxPingInput.text.toString().toIntOrNull() ?: 3000
-                                    DataStore.autoPilotCombine = combineCheck.isChecked
-                                    DataStore.autoPilotStrictWhitelist = whitelistCheck.isChecked
-                                } catch (e: Exception) {
-                                    Logs.w(e)
-                                }
-
-                                // Окно 2: Выбор групп
-                                runOnDefaultDispatcher {
-                                    val allGroups = SagerDatabase.groupDao.allGroups()
-                                    if (allGroups.isEmpty()) {
-                                        onMainDispatcher { snackbar("Нет групп для проверки!").show() }
-                                        return@runOnDefaultDispatcher
-                                    }
-
-                                    // ДОБАВЛЕНО: Считаем прокси в каждой группе и добавляем в название
-                                    val groupNames = allGroups.map { group ->
-                                        val count = SagerDatabase.proxyDao.countByGroup(group.id)
-                                        "${group.displayName()} ($count)"
-                                    }.toTypedArray()
-
-                                    val checkedGroups = BooleanArray(allGroups.size) { false }
-
-                                    val previouslySelected = DataStore.autoPilotGroupIds.split(",").mapNotNull { it.toLongOrNull() }
-                                    for (i in allGroups.indices) {
-                                        if (previouslySelected.contains(allGroups[i].id)) {
-                                            checkedGroups[i] = true
-                                        }
-                                    }
-
-                                    if (!checkedGroups.contains(true)) {
-                                        val currentIndex = allGroups.indexOfFirst { it.id == DataStore.currentGroupId() }
-                                        if (currentIndex != -1) checkedGroups[currentIndex] = true
-                                    }
-
-                                    onMainDispatcher {
-                                        MaterialAlertDialogBuilder(requireContext())
-                                            .setTitle("Выберите группы для проверки")
-                                            .setMultiChoiceItems(groupNames, checkedGroups) { _, which, isChecked ->
-                                                checkedGroups[which] = isChecked
-                                            }
-                                            .setPositiveButton("ЗАПУСТИТЬ") { _, _ ->
-                                                val selectedIds = mutableListOf<Long>()
-                                                for (i in checkedGroups.indices) {
-                                                    if (checkedGroups[i]) selectedIds.add(allGroups[i].id)
-                                                }
-
-                                                if (selectedIds.isEmpty()) {
-                                                    snackbar("Ни одной группы не выбрано!").show()
-                                                    return@setPositiveButton
-                                                }
-
-                                                DataStore.autoPilotGroupIds = selectedIds.joinToString(",")
-                                                io.nekohasekai.sagernet.bg.AutoPilotService.start(requireContext())
-                                                snackbar("🤖 AutoPilot запущен в фоне!").show()
-                                            }
-                                            .setNegativeButton("Отмена", null)
-                                            .show()
-                                    }
-                                }
-                            }
-                            .setNegativeButton("Отмена", null)
-                            .show()
-                    } catch (e: Exception) {
-                        Logs.e("Ошибка меню AutoPilot", e)
-                        snackbar("Ошибка: не найден layout/dialog_autopilot_settings.xml").show()
-                    }
-                }
-            }
-
-            // 14. Менеджер GitHub
+            // 9. Менеджер GitHub
             R.id.action_github_manager -> startActivity(Intent(requireActivity(), GitHubManagerActivity::class.java))
 
             // 15. Clear unavailable

@@ -106,28 +106,11 @@
                 android:id="@+id/action_connection_url_test"
                 android:title="@string/connection_test_url_test" />
             <item
-                android:id="@+id/action_full_https_test"
-                android:title="@string/full_https_test" />
-            <item
-                android:id="@+id/action_github_auto_url"
-                android:title="@string/github_export_auto_url_test" />
-            <item
-                android:id="@+id/action_github_auto_https"
-                android:title="@string/github_export_auto_https_test" />
-            <item
-                android:id="@+id/action_github_auto_hardcore"
-                android:title="Авто-экспорт (VPN-ТЕСТ)"
-                app:showAsAction="never" />
-            <item
                 android:id="@+id/action_github_export_selected"
                 android:title="@string/github_export_selected" />
             <item
                 android:id="@+id/action_github_export_country"
                 android:title="@string/github_export_by_country" />
-            <item
-                android:id="@+id/action_autopilot"
-                android:title="🤖 AutoPilot"
-                app:showAsAction="never" />
             <item
                 android:id="@+id/action_github_manager"
                 android:title="📁 Менеджер GitHub"
