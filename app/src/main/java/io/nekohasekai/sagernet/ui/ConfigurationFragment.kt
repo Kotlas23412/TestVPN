@@ -2005,7 +2005,9 @@ class ConfigurationFragment @JvmOverloads constructor(
 
     fun runGithubExportSelected() {
         runOnDefaultDispatcher {
-            val allProxies = getOrderedProxiesForCurrentGroup()
+
+            // Важно: сохраняем исходный порядок из конфига/группы, без дополнительной сортировки.
+            val allProxies = SagerDatabase.proxyDao.getByGroup(DataStore.currentGroupId())
 
             if (allProxies.isEmpty()) {
                 onMainDispatcher { snackbar("В этой группе нет прокси!").show() }
@@ -2066,7 +2068,8 @@ class ConfigurationFragment @JvmOverloads constructor(
 
     fun runGithubExportByCountry() {
         runOnDefaultDispatcher {
-            val allProxies = getOrderedProxiesForCurrentGroup()
+            val allProxies = SagerDatabase.proxyDao.getByGroup(DataStore.currentGroupId())
+
 
             if (allProxies.isEmpty()) {
                 onMainDispatcher { snackbar("Нет прокси для экспорта").show() }
