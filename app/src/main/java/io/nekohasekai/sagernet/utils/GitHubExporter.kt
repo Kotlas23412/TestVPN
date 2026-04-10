@@ -4,7 +4,6 @@ import android.net.Uri
 import android.util.Base64
 import io.nekohasekai.sagernet.database.DataStore
 import io.nekohasekai.sagernet.database.ProxyEntity
-import io.nekohasekai.sagernet.fmt.AbstractBean
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -13,17 +12,15 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
-import java.util.Locale
 import androidx.core.net.toUri
 
 object GitHubExporter {
 
     private val client = OkHttpClient()
+    private val geoCache = mutableMapOf<String, Pair<String, String>>()
+
     data class ExportResult(val success: Boolean, val message: String)
 
-    /**
-     * Выполняет экспорт прокси на GitHub в ДВУХ форматах: .txt и .json (для Happ)
-     */
     suspend fun exportGroup(
         groupName: String,
         proxies: List<ProxyEntity>
@@ -31,27 +28,28 @@ object GitHubExporter {
 
         val token = DataStore.githubToken.trim()
         val repo = DataStore.githubRepo.trim()
-        val path = DataStore.githubFilePath.trim() // например: proxies.txt
+        val path = DataStore.githubFilePath.trim()
 
         if (token.isBlank() || repo.isBlank() || path.isBlank()) {
             return@withContext ExportResult(false, "Не указаны настройки GitHub")
         }
 
         try {
-            // ========================================================
-            // ШАГ 1: ГЕНЕРАЦИЯ И ОТПРАВКА ОБЫЧНОГО TXT ФАЙЛА (vless://)
-            // ========================================================
             val txtResult = uploadTextFile(token, repo, path, groupName, proxies)
             if (!txtResult) return@withContext ExportResult(false, "Ошибка загрузки TXT файла")
 
-            // ========================================================
-            // ШАГ 2: ГЕНЕРАЦИЯ И ОТПРАВКА JSON ФАЙЛА ДЛЯ HAPP
-            // ========================================================
-            val jsonPath = if (path.endsWith(".txt")) path.replace(".txt", ".json") else "$path.json"
+            val jsonPath =
+                if (path.endsWith(".txt")) path.replace(".txt", ".json") else "$path.json"
             val jsonArrayString = buildHappJsonArray(proxies)
 
             if (jsonArrayString.length > 10) {
-                uploadDirectFile(token, repo, jsonPath, jsonArrayString, "Auto-update JSON Happ: $groupName")
+                uploadDirectFile(
+                    token,
+                    repo,
+                    jsonPath,
+                    jsonArrayString,
+                    "Auto-update JSON Happ: $groupName"
+                )
             }
 
             return@withContext ExportResult(true, "Успешно выгружено в TXT и JSON форматы!")
@@ -61,18 +59,12 @@ object GitHubExporter {
         }
     }
 
-    // =========================================================================
-    // ГЕНЕРАТОР XRAY JSON ДЛЯ HAPP (Обход блокировок + Исключение Рунета)
-    // =========================================================================
     private fun buildHappJsonArray(proxies: List<ProxyEntity>): String {
         val rootArray = JSONArray()
 
         for ((index, p) in proxies.withIndex()) {
             try {
-                // Генерируем нормализованное красивое имя (🇷🇺 Россия | LTE #1)
                 val niceName = p.toNormalizedStandardLink(index, updateBean = false)
-
-                // Парсим стандартную ссылку vless://, чтобы достать все параметры без ошибок
                 val link = p.toStdLink()
                 val uri = link.toUri()
                 val protocol = uri.scheme?.lowercase() ?: "vless"
@@ -81,14 +73,18 @@ object GitHubExporter {
                 node.put("log", JSONObject().put("loglevel", "warning"))
                 node.put("remarks", niceName)
 
-                // 1. INBOUNDS (Сниффинг обязателен для работы маршрутизации!)
                 val inbounds = JSONArray()
-                val sniff = JSONObject().put("enabled", true).put("destOverride", JSONArray().put("http").put("tls"))
-                inbounds.put(JSONObject().put("port", 10808).put("protocol", "socks").put("settings", JSONObject().put("udp", true)).put("sniffing", sniff))
-                inbounds.put(JSONObject().put("port", 10809).put("protocol", "http").put("sniffing", sniff))
+                val sniff = JSONObject().put("enabled", true)
+                    .put("destOverride", JSONArray().put("http").put("tls"))
+                inbounds.put(
+                    JSONObject().put("port", 10808).put("protocol", "socks")
+                        .put("settings", JSONObject().put("udp", true)).put("sniffing", sniff)
+                )
+                inbounds.put(
+                    JSONObject().put("port", 10809).put("protocol", "http").put("sniffing", sniff)
+                )
                 node.put("inbounds", inbounds)
 
-                // 2. OUTBOUNDS
                 val outbounds = JSONArray()
                 val proxyOut = JSONObject()
                 proxyOut.put("tag", "proxy")
@@ -97,11 +93,35 @@ object GitHubExporter {
                 val settings = JSONObject()
                 val streamSettings = JSONObject()
 
-                val address = uri.host ?: ""
-                val port = uri.port.takeIf { it > 0 } ?: 443
-                val uuid = uri.userInfo ?: ""
+                // --- ИСПРАВЛЕННЫЙ БЛОК ЧТЕНИЯ НАСТРОЕК ---
+                var address = uri.host ?: ""
+                var port = uri.port.takeIf { it > 0 } ?: 443
+                var uuid = uri.userInfo ?: ""
+                var network = uri.getQueryParameter("type") ?: "tcp"
+                var security = uri.getQueryParameter("security") ?: "none"
+                var path = uri.getQueryParameter("path") ?: ""
+                var host = uri.getQueryParameter("host") ?: ""
+                var sni = uri.getQueryParameter("sni") ?: ""
+                var fp = uri.getQueryParameter("fp") ?: ""
 
-                // Настройки сервера
+                // 1. Специальная расшифровка для VMess (Base64 JSON)
+                if (protocol == "vmess") {
+                    try {
+                        val base64Str = link.substringAfter("vmess://").substringBefore("#")
+                        val vmessJson = JSONObject(String(Base64.decode(base64Str, Base64.DEFAULT)))
+                        address = vmessJson.optString("add", address)
+                        port = vmessJson.optInt("port", port)
+                        uuid = vmessJson.optString("id", uuid)
+                        network = vmessJson.optString("net", "tcp")
+                        if (network == "h2") network = "http"
+                        security = if (vmessJson.optString("tls") == "tls") "tls" else "none"
+                        path = vmessJson.optString("path", "")
+                        host = vmessJson.optString("host", "")
+                        sni = vmessJson.optString("sni", host)
+                    } catch (e: Exception) {}
+                }
+
+                // 2. Добавляем настройки в зависимости от протокола
                 if (protocol == "vless" || protocol == "vmess") {
                     val vnext = JSONArray()
                     val server = JSONObject().put("address", address).put("port", port)
@@ -110,22 +130,54 @@ object GitHubExporter {
                         user.put("encryption", uri.getQueryParameter("encryption") ?: "none")
                         uri.getQueryParameter("flow")?.let { if (it.isNotBlank()) user.put("flow", it) }
                     } else {
-                        user.put("alterId", uri.getQueryParameter("alterId")?.toIntOrNull() ?: 0)
-                        user.put("security", uri.getQueryParameter("security") ?: "auto")
+                        // Извлекаем alterId для vmess
+                        val aid = try {
+                            link.substringAfter("vmess://").substringBefore("#").let {
+                                JSONObject(String(Base64.decode(it, Base64.DEFAULT))).optInt("aid", 0)
+                            }
+                        } catch(e:Exception){ 0 }
+                        user.put("alterId", aid)
+                        user.put("security", "auto")
                     }
                     server.put("users", JSONArray().put(user))
                     vnext.put(server)
                     settings.put("vnext", vnext)
+
+                } else if (protocol == "ss") {
+                    // ИСПРАВЛЕНО: Добавлена поддержка Shadowsocks
+                    var methodAndPass = uri.userInfo ?: ""
+                    // У ss userInfo часто запакован в base64 (например, aes-256-gcm:password)
+                    if (!methodAndPass.contains(":") && methodAndPass.isNotBlank()) {
+                        try {
+                            methodAndPass = String(Base64.decode(methodAndPass, Base64.DEFAULT))
+                        } catch (e: Exception) {}
+                    }
+                    val method = methodAndPass.substringBefore(":")
+                    val password = methodAndPass.substringAfter(":")
+
+                    val server = JSONObject()
+                        .put("address", address)
+                        .put("port", port)
+                        .put("method", method.ifBlank { "aes-256-gcm" })
+                        .put("password", password)
+                    settings.put("servers", JSONArray().put(server))
+
+                } else if (protocol == "trojan") {
+                    // ИСПРАВЛЕНО: Добавлена поддержка Trojan
+                    val server = JSONObject()
+                        .put("address", address)
+                        .put("port", port)
+                        .put("password", uuid)
+                    settings.put("servers", JSONArray().put(server))
                 }
 
-                // Транспорт (TCP, WS, GRPC)
-                val network = uri.getQueryParameter("type") ?: "tcp"
+                // 3. Формируем Stream Settings (Транспорт и TLS)
                 streamSettings.put("network", network)
 
                 if (network == "ws") {
                     val wsSettings = JSONObject()
-                    uri.getQueryParameter("path")?.let { wsSettings.put("path", it) }
-                    uri.getQueryParameter("host")?.let { wsSettings.put("headers", JSONObject().put("Host", it)) }
+                    if (path.isNotBlank()) wsSettings.put("path", path)
+                    if (host.isNotBlank()) wsSettings.put("headers", JSONObject().put("Host", host))
                     streamSettings.put("wsSettings", wsSettings)
                 } else if (network == "grpc") {
                     val grpcSettings = JSONObject()
@@ -133,15 +185,13 @@ object GitHubExporter {
                     streamSettings.put("grpcSettings", grpcSettings)
                 }
 
-                // Security (TLS / Reality)
-                val sec = uri.getQueryParameter("security")
-                if (sec == "tls" || sec == "reality") {
-                    streamSettings.put("security", sec)
+                if (security == "tls" || security == "reality") {
+                    streamSettings.put("security", security)
                     val secObj = JSONObject()
-                    uri.getQueryParameter("sni")?.let { secObj.put("serverName", it) }
-                    uri.getQueryParameter("fp")?.let { secObj.put("fingerprint", it) }
+                    if (sni.isNotBlank()) secObj.put("serverName", sni)
+                    if (fp.isNotBlank()) secObj.put("fingerprint", fp)
 
-                    if (sec == "reality") {
+                    if (security == "reality") {
                         uri.getQueryParameter("pbk")?.let { secObj.put("publicKey", it) }
                         uri.getQueryParameter("sid")?.let { secObj.put("shortId", it) }
                         uri.getQueryParameter("spx")?.let { secObj.put("spiderX", it) }
@@ -150,20 +200,30 @@ object GitHubExporter {
                         streamSettings.put("tlsSettings", secObj)
                     }
                 }
+                // --- КОНЕЦ ИСПРАВЛЕННОГО БЛОКА ---
 
-                // ФРАГМЕНТАЦИЯ (Извлекаем из бина напрямую)
                 try {
                     val bean = p.requireBean()
-                    val fragEnabled = bean.javaClass.getMethod("getFragmentEnabled").invoke(bean) as? Boolean ?: false
+                    val fragEnabled =
+                        bean.javaClass.getMethod("getFragmentEnabled").invoke(bean) as? Boolean
+                            ?: false
                     if (fragEnabled) {
-                        val packets = bean.javaClass.getMethod("getFragmentPackets").invoke(bean) as? String ?: "1-3"
-                        val length = bean.javaClass.getMethod("getFragmentLength").invoke(bean) as? String ?: "50-100"
-                        val interval = bean.javaClass.getMethod("getFragmentInterval").invoke(bean) as? String ?: "10-20"
+                        val packets =
+                            bean.javaClass.getMethod("getFragmentPackets").invoke(bean) as? String
+                                ?: "1-3"
+                        val length =
+                            bean.javaClass.getMethod("getFragmentLength").invoke(bean) as? String
+                                ?: "50-100"
+                        val interval =
+                            bean.javaClass.getMethod("getFragmentInterval").invoke(bean) as? String
+                                ?: "10-20"
 
-                        proxyOut.put("fragment", JSONObject()
-                            .put("packets", packets)
-                            .put("length", length)
-                            .put("interval", interval))
+                        proxyOut.put(
+                            "fragment", JSONObject()
+                                .put("packets", packets)
+                                .put("length", length)
+                                .put("interval", interval)
+                        )
                     }
                 } catch (_: Exception) {}
 
@@ -175,48 +235,68 @@ object GitHubExporter {
                 outbounds.put(JSONObject().put("tag", "block").put("protocol", "blackhole"))
                 node.put("outbounds", outbounds)
 
-                // 3. ЖЕСТКАЯ МАРШРУТИЗАЦИЯ ДЛЯ РОССИИ (В обход VPN)
                 val routing = JSONObject()
                 routing.put("domainStrategy", "IPIfNonMatch")
                 val rules = JSONArray()
 
-                // Торренты - мимо VPN
-                rules.put(JSONObject().put("type", "field").put("protocol", JSONArray().put("bittorrent")).put("outboundTag", "direct"))
+                rules.put(
+                    JSONObject().put("type", "field").put("protocol", JSONArray().put("bittorrent"))
+                        .put("outboundTag", "direct")
+                )
 
-                // Российские сайты, домены, ВК, Яндекс, Банки - мимо VPN
                 val directDomains = JSONArray()
-                    .put("geosite:ru").put("geosite:yandex").put("geosite:vk").put("geosite:mailru")
-                    .put("domain:ru").put("domain:su").put("domain:xn--p1ai").put("domain:avito.st")
-                    .put("keyword:yandex").put("keyword:vk").put("keyword:rutube").put("keyword:sber")
-                    .put("keyword:tinkoff").put("keyword:alfabank").put("keyword:vtb").put("keyword:gosuslugi")
-                rules.put(JSONObject().put("type", "field").put("domain", directDomains).put("outboundTag", "direct"))
+                    .put("domain:ru").put("domain:su").put("domain:xn--p1ai")
+                    .put("domain:vk.com").put("domain:vk.ru").put("domain:userapi.com")
+                    .put("domain:vk-cdn.net")
+                    .put("domain:vkuser.net").put("domain:mvk.com")
+                    .put("domain:yandex.ru").put("domain:yandex.net").put("domain:ya.ru")
+                    .put("domain:kinopoisk.ru")
+                    .put("domain:mail.ru").put("domain:ok.ru").put("domain:avito.ru")
+                    .put("domain:avito.st")
+                    .put("keyword:yandex").put("keyword:vkontakte").put("keyword:userapi")
+                    .put("keyword:mail")
+                    .put("keyword:rutube").put("keyword:sber").put("keyword:tinkoff")
+                    .put("keyword:alfabank")
+                    .put("keyword:vtb").put("keyword:gosuslugi")
 
-                // Российские IP-адреса и локальная сеть - мимо VPN
-                rules.put(JSONObject().put("type", "field").put("ip", JSONArray().put("geoip:ru").put("geoip:private")).put("outboundTag", "direct"))
+                rules.put(
+                    JSONObject().put("type", "field").put("domain", directDomains)
+                        .put("outboundTag", "direct")
+                )
 
-                // Реклама - блокировать
-                rules.put(JSONObject().put("type", "field").put("domain", JSONArray().put("geosite:category-ads-all")).put("outboundTag", "block"))
+                val directIps = JSONArray()
+                    .put("192.168.0.0/16").put("10.0.0.0/8").put("172.16.0.0/12")
+                    .put("127.0.0.0/8").put("fc00::/7").put("fe80::/10")
+                    .put("87.240.128.0/18").put("93.186.224.0/20")
+                    .put("95.213.0.0/18")
+
+                rules.put(
+                    JSONObject().put("type", "field").put("ip", directIps)
+                        .put("outboundTag", "direct")
+                )
 
                 routing.put("rules", rules)
                 node.put("routing", routing)
 
                 rootArray.put(node)
             } catch (e: Exception) {
-                // Игнорируем ошибки при сборке конкретного прокси
             }
         }
-        // Возвращаем красивый JSON (с отступами)
         return rootArray.toString(2)
     }
 
-    // =========================================================================
-    // ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ЗАГРУЗКИ НА GITHUB
-    // =========================================================================
-
-    private fun uploadTextFile(token: String, repo: String, path: String, groupName: String, proxies: List<ProxyEntity>): Boolean {
+    private fun uploadTextFile(
+        token: String,
+        repo: String,
+        path: String,
+        groupName: String,
+        proxies: List<ProxyEntity>
+    ): Boolean {
         val apiUrl = "https://api.github.com/repos/$repo/contents/$path"
         try {
-            val getReq = Request.Builder().url(apiUrl).addHeader("Authorization", "Bearer $token").get().build()
+            val getReq =
+                Request.Builder().url(apiUrl).addHeader("Authorization", "Bearer $token").get()
+                    .build()
             var currentText = ""
             var fileSha = ""
 
@@ -225,7 +305,8 @@ object GitHubExporter {
                     val json = JSONObject(response.body!!.string())
                     fileSha = json.optString("sha", "")
                     val base64Content = json.optString("content", "").replace("\n", "")
-                    if (base64Content.isNotEmpty()) currentText = String(Base64.decode(base64Content, Base64.DEFAULT))
+                    if (base64Content.isNotEmpty()) currentText =
+                        String(Base64.decode(base64Content, Base64.DEFAULT))
                 }
             }
 
@@ -243,25 +324,46 @@ object GitHubExporter {
             var updatedText = currentText
             if (updatedText.isEmpty()) updatedText = newGroupBlock
             else {
-                val regex = Regex("# === BEGIN $groupName ===.*?# === END $groupName ===", RegexOption.DOT_MATCHES_ALL)
-                if (updatedText.contains(regex)) updatedText = updatedText.replace(regex, newGroupBlock)
+                val regex = Regex(
+                    "# === BEGIN $groupName ===.*?# === END $groupName ===",
+                    RegexOption.DOT_MATCHES_ALL
+                )
+                if (updatedText.contains(regex)) updatedText =
+                    updatedText.replace(regex, newGroupBlock)
                 else updatedText = updatedText.trimEnd() + "\n\n" + newGroupBlock
             }
 
-            return uploadDirectFile(token, repo, path, updatedText, "Auto-update TXT: $groupName", fileSha)
+            return uploadDirectFile(
+                token,
+                repo,
+                path,
+                updatedText,
+                "Auto-update TXT: $groupName",
+                fileSha
+            )
         } catch (e: Exception) {
             return false
         }
     }
 
-    private fun uploadDirectFile(token: String, repo: String, path: String, content: String, message: String, existingSha: String = ""): Boolean {
+    private fun uploadDirectFile(
+        token: String,
+        repo: String,
+        path: String,
+        content: String,
+        message: String,
+        existingSha: String = ""
+    ): Boolean {
         val apiUrl = "https://api.github.com/repos/$repo/contents/$path"
         try {
             var finalSha = existingSha
             if (finalSha.isEmpty()) {
-                val getReq = Request.Builder().url(apiUrl).addHeader("Authorization", "Bearer $token").get().build()
+                val getReq =
+                    Request.Builder().url(apiUrl).addHeader("Authorization", "Bearer $token").get()
+                        .build()
                 client.newCall(getReq).execute().use { response ->
-                    if (response.isSuccessful) finalSha = JSONObject(response.body!!.string()).optString("sha", "")
+                    if (response.isSuccessful) finalSha =
+                        JSONObject(response.body!!.string()).optString("sha", "")
                 }
             }
 
@@ -283,36 +385,129 @@ object GitHubExporter {
         }
     }
 
-    /**
-     * Создает стандартизированное красивое имя и применяет его
-     */
     private fun ProxyEntity.toNormalizedStandardLink(index: Int, updateBean: Boolean): String {
         val bean = requireBean()
         val originalName = (bean.name ?: "").ifBlank { displayName() }.ifBlank { "Unknown" }
         val upperName = originalName.uppercase()
 
-        var flag = "🌍"
-        var countryName = "Локация"
+        val address = bean.serverAddress?.trim()?.lowercase() ?: ""
+
+        val link = try { toStdLink() } catch (_: Exception) { "" }
+        val uri = try { link.toUri() } catch (_: Exception) { null }
+        val sni = uri?.getQueryParameter("sni")?.lowercase() ?: ""
+
+        var flag = ""
+        var countryName = ""
         var resolved = false
 
-        CountryCatalog.resolveFromText(originalName)?.let { country ->
-            if (country.flag.isNotBlank()) flag = country.flag
-            countryName = country.countryNameRu
-            resolved = true
+        val isCorruptedName = upperName.contains("ЛОКАЦИЯ") || upperName.contains("GLOBAL") || upperName.contains("УЗЕЛ")
+
+        if (!isCorruptedName) {
+            val explicitRegex = Regex("([\uD83C][\uDDE6-\uDDFF][\uD83C][\uDDE6-\uDDFF])\\s*([A-Za-zА-Яа-яЁё\\-\\s]+?)(?:\\s*\\[|\\s*\\||\\s*#|\\s*\\*|$)")
+            val match = explicitRegex.find(originalName.trim())
+
+            if (match != null) {
+                val foundFlag = match.groupValues[1]
+                val rawName = match.groupValues[2].trim()
+
+                if (rawName.isNotBlank() && !rawName.uppercase().contains("ANYCAST")) {
+                    flag = foundFlag
+                    countryName = when (rawName.uppercase()) {
+                        "FRANCE" -> "Франция"
+                        "GERMANY" -> "Германия"
+                        "NORWAY" -> "Норвегия"
+                        "THE NETHERLANDS", "NETHERLANDS" -> "Нидерланды"
+                        "RUSSIA", "РОССИЯ" -> "Россия"
+                        "UNITED STATES", "USA" -> "США"
+                        "UNITED KINGDOM", "UK" -> "Великобритания"
+                        "FINLAND" -> "Финляндия"
+                        "SWEDEN" -> "Швеция"
+                        "POLAND" -> "Польша"
+                        "TURKEY" -> "Турция"
+                        "HUNGARY" -> "Венгрия"
+                        "ANDORRA" -> "Андорра"
+                        else -> rawName
+                    }
+                    resolved = true
+                }
+            }
         }
 
-        if (!resolved) {
+        if (!resolved && address.isNotBlank()) {
             try {
-                val ipCode = moe.matsuri.nb4a.utils.GeoIPHelper.detectCountryByIpOffline(bean.serverAddress ?: "")
-                CountryCatalog.fromCode(ipCode)?.let { country ->
-                    if (country.flag.isNotBlank()) flag = country.flag
-                    countryName = country.countryNameRu
+                var ipToDetect = address
+                if (!ipToDetect.matches(Regex("^[0-9a-fA-F\\.:]+$"))) {
+                    try { ipToDetect = java.net.InetAddress.getByName(ipToDetect).hostAddress ?: address } catch (_: Exception) {}
+                }
+
+                val ipCode = moe.matsuri.nb4a.utils.GeoIPHelper.detectCountryByIpOffline(ipToDetect)
+                if (!ipCode.isNullOrBlank() && ipCode.length == 2 && ipCode != "XX" && ipCode != "UN" && ipCode != "ZZ") {
+                    val c1 = ipCode[0].uppercaseChar().code - 'A'.code + 0x1F1E6
+                    val c2 = ipCode[1].uppercaseChar().code - 'A'.code + 0x1F1E6
+                    flag = String(Character.toChars(c1)) + String(Character.toChars(c2))
+                    countryName = java.util.Locale("ru", ipCode).displayCountry
+                    resolved = true
                 }
             } catch (_: Exception) {}
         }
 
-        if (countryName.isBlank() || countryName == "Unknown") countryName = "Локация"
-        val isLte = bean.serverAddress?.contains("/") == true || upperName.contains("CIDR") || upperName.contains("LTE")
+        if (!resolved && address.isNotBlank()) {
+            try {
+                if (geoCache.containsKey(address)) {
+                    val cached = geoCache[address]!!
+                    flag = cached.first
+                    countryName = cached.second
+                    resolved = true
+                } else {
+                    val request = Request.Builder()
+                        .url("http://ip-api.com/json/$address?fields=status,country,countryCode&lang=ru")
+                        .build()
+                    client.newCall(request).execute().use { response ->
+                        if (response.isSuccessful) {
+                            val json = JSONObject(response.body!!.string())
+                            if (json.optString("status") == "success") {
+                                val country = json.optString("country", "")
+                                val countryCode = json.optString("countryCode", "")
+                                if (countryCode.isNotBlank() && country.isNotBlank()) {
+                                    val c1 = countryCode[0].uppercaseChar().code - 'A'.code + 0x1F1E6
+                                    val c2 = countryCode[1].uppercaseChar().code - 'A'.code + 0x1F1E6
+                                    flag = String(Character.toChars(c1)) + String(Character.toChars(c2))
+                                    countryName = country
+                                    resolved = true
+                                    geoCache[address] = Pair(flag, countryName)
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        if (!resolved && sni.isNotBlank()) {
+            when {
+                sni.endsWith(".ru") || sni.endsWith(".su") || sni.endsWith(".рф") || sni.contains("yandex") || sni.contains("vk.com") || sni.contains("x5.ru") -> { flag = "🇷🇺"; countryName = "Россия"; resolved = true }
+                sni.endsWith(".de") -> { flag = "🇩🇪"; countryName = "Германия"; resolved = true }
+                sni.endsWith(".nl") -> { flag = "🇳🇱"; countryName = "Нидерланды"; resolved = true }
+                sni.endsWith(".fi") -> { flag = "🇫🇮"; countryName = "Финляндия"; resolved = true }
+                sni.endsWith(".us") -> { flag = "🇺🇸"; countryName = "США"; resolved = true }
+                sni.endsWith(".uk") || sni.endsWith(".co.uk") -> { flag = "🇬🇧"; countryName = "Великобритания"; resolved = true }
+                sni.endsWith(".fr") -> { flag = "🇫🇷"; countryName = "Франция"; resolved = true }
+                sni.endsWith(".se") -> { flag = "🇸🇪"; countryName = "Швеция"; resolved = true }
+            }
+        }
+
+        if (!resolved || countryName.isBlank()) {
+            flag = "🌐"
+            countryName = if (address.isNotBlank()) {
+                "Узел $address"
+            } else if (sni.isNotBlank()) {
+                "SNI $sni"
+            } else {
+                "Global"
+            }
+        }
+
+        val isLte = address.contains("/") || upperName.contains("CIDR") || upperName.contains("LTE")
         val lteSuffix = if (isLte) " | LTE" else ""
 
         val newName = "$flag $countryName$lteSuffix #${index + 1}"
