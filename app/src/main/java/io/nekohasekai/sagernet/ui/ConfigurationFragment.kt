@@ -2004,24 +2004,47 @@ class ConfigurationFragment @JvmOverloads constructor(
     }
 
     fun runGithubExportSelected() {
-        val group = DataStore.currentGroup()
-
         runOnDefaultDispatcher {
-            val allProxies = SagerDatabase.proxyDao.getByGroup(group.id)
+            // Важно: сохраняем исходный порядок из конфига/группы, без дополнительной сортировки.
+            val allProxies = SagerDatabase.proxyDao.getByGroup(DataStore.currentGroupId())
 
             if (allProxies.isEmpty()) {
                 onMainDispatcher { snackbar("В этой группе нет прокси!").show() }
                 return@runOnDefaultDispatcher
             }
 
-            val names = allProxies.map { it.displayName() }.toTypedArray()
+            val names = allProxies.map { proxy ->
+                val statusText = when (proxy.status) {
+                    1 -> "✅ ${proxy.ping} ms"
+                    0 -> "⏳ не тестировался"
+                    2, 3 -> "❌ ${proxy.error ?: "не работает"}"
+                    else -> "⚪ ${proxy.error ?: "без статуса"}"
+                }
+                "${proxy.displayName()}  [$statusText]"
+            }.toTypedArray()
             val checked = BooleanArray(allProxies.size)
+            val hasAvailable = allProxies.any { it.status == 1 }
 
             onMainDispatcher {
                 MaterialAlertDialogBuilder(requireContext())
-                    .setTitle("Выберите прокси")
+                    .setTitle("Выберите прокси для экспорта")
                     .setMultiChoiceItems(names, checked) { _, which, isChecked ->
                         checked[which] = isChecked
+                    }
+                    .setNeutralButton(if (hasAvailable) "Выбрать рабочие" else "Выбрать все") { _, _ ->
+                        val selectAvailable = hasAvailable
+                        for (i in allProxies.indices) {
+                            checked[i] = if (selectAvailable) allProxies[i].status == 1 else true
+                        }
+                        val selected = allProxies.filterIndexed { i, _ -> checked[i] }
+                        if (selected.isEmpty()) {
+                            snackbar("Ничего не выбрано").show()
+                            return@setNeutralButton
+                        }
+                        exportMultipleGroups(
+                            selected,
+                            "Отправляем ${selected.size} прокси..."
+                        )
                     }
                     .setPositiveButton("Экспорт") { _, _ ->
                         val selected = allProxies.filterIndexed { i, _ -> checked[i] }
@@ -2032,7 +2055,6 @@ class ConfigurationFragment @JvmOverloads constructor(
                         }
 
                         exportMultipleGroups(
-                            group.displayName(),
                             selected,
                             "Отправляем ${selected.size} прокси..."
                         )
@@ -2044,10 +2066,8 @@ class ConfigurationFragment @JvmOverloads constructor(
     }
 
     fun runGithubExportByCountry() {
-        val group = DataStore.currentGroup()
-
         runOnDefaultDispatcher {
-            val allProxies = SagerDatabase.proxyDao.getByGroup(group.id)
+            val allProxies = SagerDatabase.proxyDao.getByGroup(DataStore.currentGroupId())
 
             if (allProxies.isEmpty()) {
                 onMainDispatcher { snackbar("Нет прокси для экспорта").show() }
@@ -2136,7 +2156,6 @@ class ConfigurationFragment @JvmOverloads constructor(
                             return@setNeutralButton
                         }
                         exportMultipleGroups(
-                            "${group.displayName()} - all countries",
                             bestByCountry,
                             "Отправка ${bestByCountry.size} прокси (по 2 лучших на страну)..."
                         )
@@ -2166,11 +2185,8 @@ class ConfigurationFragment @JvmOverloads constructor(
 
                         val countriesLabel = selectedCountries.joinToString(", ")
                         exportMultipleGroups(
-                            "${group.displayName()} - ${selectedCountries.size} countries",
                             bestByCountry,
-
                             "Отправка ${bestByCountry.size} прокси (по 2 лучших на страну: $countriesLabel)..."
-
                         )
                     }
                     .setNegativeButton(android.R.string.cancel, null)
@@ -2180,7 +2196,6 @@ class ConfigurationFragment @JvmOverloads constructor(
     }
 
     private fun exportMultipleGroups(
-        name: String,
         list: List<ProxyEntity>,
         msg: String
     ) {
@@ -2191,7 +2206,12 @@ class ConfigurationFragment @JvmOverloads constructor(
             .show()
 
         runOnDefaultDispatcher {
-            val result = io.nekohasekai.sagernet.utils.GitHubExporter.exportGroup(name, list)
+            val syncError = syncExportToAutoPilotBestGroup(list)
+            val result = if (syncError == null) {
+                io.nekohasekai.sagernet.utils.GitHubExporter.exportGroup("AutoPilot Best", list)
+            } else {
+                GitHubExporter.ExportResult(false, syncError)
+            }
 
             onMainDispatcher {
                 dialog.dismiss()
@@ -2201,6 +2221,42 @@ class ConfigurationFragment @JvmOverloads constructor(
                     .setPositiveButton(android.R.string.ok, null)
                     .show()
             }
+        }
+    }
+
+    private suspend fun syncExportToAutoPilotBestGroup(list: List<ProxyEntity>): String? {
+        return try {
+            val groupName = "🚀 AutoPilot Best"
+            val allGroups = SagerDatabase.groupDao.allGroups()
+            var targetGroup = allGroups.find { it.name == groupName || it.displayName() == groupName }
+            if (targetGroup == null) {
+                val newGroup = ProxyGroup().apply {
+                    name = groupName
+                    type = GroupType.BASIC
+                }
+                val newId = SagerDatabase.groupDao.createGroup(newGroup)
+                targetGroup = SagerDatabase.groupDao.getById(newId)
+            }
+
+            val bestGroup = targetGroup ?: return "Не удалось создать группу AutoPilot Best"
+            val groupId = bestGroup.id
+
+            SagerDatabase.proxyDao.deleteByGroup(groupId)
+
+            for ((index, proxy) in list.withIndex()) {
+                val created = ProfileManager.createProfile(groupId, proxy.requireBean())
+                created.userOrder = index.toLong()
+                created.ping = proxy.ping
+                created.status = proxy.status
+                created.error = proxy.error
+                ProfileManager.updateProfile(created)
+            }
+
+            GroupManager.postReload(groupId)
+            null
+        } catch (e: Exception) {
+            Logs.e("AutoPilot Best sync failed", e)
+            "Ошибка синхронизации AutoPilot Best: ${e.readableMessage}"
         }
     }
 
