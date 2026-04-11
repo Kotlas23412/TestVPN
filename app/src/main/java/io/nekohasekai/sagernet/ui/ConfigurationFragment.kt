@@ -474,6 +474,7 @@ class ConfigurationFragment @JvmOverloads constructor(
             // 5, 6. Тесты
             R.id.action_connection_tcp_ping -> pingTest(false)
             R.id.action_connection_url_test -> urlTest()
+            R.id.action_subscription_auto_https_cleanup -> runSubscriptionAutoHttpsCleanup()
 
             // 7, 8. Ручные экспорты
             R.id.action_github_export_selected -> runGithubExportSelected()
@@ -922,6 +923,105 @@ class ConfigurationFragment @JvmOverloads constructor(
             test.notification = ConnectionTestNotification(
                 requireContext(),
                 "[${group.displayName()}] ${getString(R.string.full_https_test)}"
+            )
+            dialog.hide()
+        }
+    }
+
+    @OptIn(DelicateCoroutinesApi::class)
+    fun runSubscriptionAutoHttpsCleanup() {
+        if (DataStore.runningTest) {
+            snackbar("Тестирование уже запущено! Дождитесь окончания.").show()
+            return
+        }
+
+        val group = DataStore.currentGroup()
+        if (group.type != GroupType.SUBSCRIPTION) {
+            snackbar(getString(R.string.group_not_subscription)).show()
+            return
+        }
+        DataStore.runningTest = true
+
+        val test = TestDialog()
+        val dialog = test.builder.show()
+        test.proxyN = 0
+
+        val mainJob = runOnDefaultDispatcher {
+            try {
+                val profilesList = SagerDatabase.proxyDao.getByGroup(group.id)
+                test.proxyN = profilesList.size
+                val deletedProfiles = mutableListOf<ProxyEntity>()
+
+                for (profile in profilesList) {
+                    profile.status = 0
+
+                    try {
+                        val result = FullTestInstance(
+                            profile = profile,
+                            timeout = 15000,
+                            minOk = 2
+                        ).doTest()
+
+                        if (result.success) {
+                            profile.status = 1
+                            profile.ping = result.bestLatencyMs.toInt()
+                            profile.error = null
+                            ProfileManager.updateProfile(profile)
+                        } else {
+                            profile.status = 3
+                            profile.error = result.error ?: "HTTPS test failed"
+                            deletedProfiles += profile
+                            ProfileManager.deleteProfile(profile.groupId, profile.id)
+                        }
+                    } catch (e: PluginManager.PluginNotFoundException) {
+                        profile.status = 2
+                        profile.error = e.readableMessage
+                        deletedProfiles += profile
+                        ProfileManager.deleteProfile(profile.groupId, profile.id)
+                    } catch (e: Exception) {
+                        profile.status = 3
+                        profile.error = e.readableMessage
+                        deletedProfiles += profile
+                        ProfileManager.deleteProfile(profile.groupId, profile.id)
+                    }
+
+                    test.update(profile)
+                }
+
+                GroupManager.postReload(group.id)
+                DataStore.runningTest = false
+
+                onMainDispatcher {
+                    test.dialogStatus.set(2)
+                    if (dialog.isShowing) dialog.dismiss()
+                    snackbar(
+                        "Автопроверка подписки завершена. Удалено: ${deletedProfiles.size}, осталось: ${profilesList.size - deletedProfiles.size}"
+                    ).show()
+                }
+            } catch (e: Exception) {
+                Logs.w(e)
+                DataStore.runningTest = false
+                onMainDispatcher {
+                    if (dialog.isShowing) dialog.dismiss()
+                    snackbar("Ошибка автопроверки: ${e.readableMessage}").show()
+                }
+            }
+        }
+
+        test.cancel = {
+            test.dialogStatus.set(2)
+            if (dialog.isShowing) dialog.dismiss()
+            runOnDefaultDispatcher {
+                mainJob.cancel()
+                GroupManager.postReload(group.id)
+                DataStore.runningTest = false
+            }
+        }
+        test.minimize = {
+            test.dialogStatus.set(1)
+            test.notification = ConnectionTestNotification(
+                requireContext(),
+                "[${group.displayName()}] ${getString(R.string.subscription_auto_https_cleanup)}"
             )
             dialog.hide()
         }
