@@ -1536,7 +1536,8 @@ class ConfigurationFragment @JvmOverloads constructor(
             byProtocol.setOnMenuItemClickListener {
                 it.isChecked = true
                 updateTo(GroupOrder.BY_PROTOCOL)
-                showProtocolPriorityDialog(proxyGroup.id)
+                (parentFragment as? ConfigurationFragment)
+                    ?.showProtocolPriorityDialog(proxyGroup.id)
                 true
             }
         }
