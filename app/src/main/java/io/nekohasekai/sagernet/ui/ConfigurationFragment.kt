@@ -119,18 +119,19 @@ import io.nekohasekai.sagernet.bg.proto.FullTestInstance
 import io.nekohasekai.sagernet.bg.proto.FullTestResult
 import io.nekohasekai.sagernet.utils.GitHubExporter
 
-private fun applyGroupOrder(proxies: List<ProxyEntity>, order: Int): List<ProxyEntity> {
+private fun applyGroupOrder(proxies: List<ProxyEntity>, order: Int, groupId: Long): List<ProxyEntity> {
     return when (order) {
         GroupOrder.BY_NAME -> proxies.sortedBy { it.displayName() }
         GroupOrder.BY_DELAY -> proxies.sortedBy { if (it.status == 1) it.ping else 114514 }
         GroupOrder.BY_PROTOCOL -> {
+            val preferredProtocol = DataStore.getGroupProtocolPriority(groupId) ?: "vless"
             val protocolBestPing = proxies.groupBy { it.displayType().lowercase() }
                 .mapValues { (_, list) ->
                     list.filter { it.status == 1 }.minOfOrNull { it.ping } ?: Int.MAX_VALUE
                 }
             proxies.sortedWith(
                 compareBy<ProxyEntity> { proxy ->
-                    if (proxy.displayType().equals("vless", ignoreCase = true)) {
+                    if (proxy.displayType().equals(preferredProtocol, ignoreCase = true)) {
                         0
                     } else {
                         1
@@ -1799,7 +1800,7 @@ class ConfigurationFragment @JvmOverloads constructor(
 
             fun reloadProfiles() {
                 var newProfiles = SagerDatabase.proxyDao.getByGroup(proxyGroup.id)
-                newProfiles = applyGroupOrder(newProfiles, proxyGroup.order)
+                newProfiles = applyGroupOrder(newProfiles, proxyGroup.order, proxyGroup.id)
 
                 configurationList.clear()
                 configurationList.putAll(newProfiles.associateBy { it.id })
@@ -2270,7 +2271,7 @@ class ConfigurationFragment @JvmOverloads constructor(
             var allProxies = SagerDatabase.proxyDao.getByGroup(group.id)
 
             // Применяем сортировку в соответствии с настройками группы
-            allProxies = applyGroupOrder(allProxies, group.order)
+            allProxies = applyGroupOrder(allProxies, group.order, group.id)
 
             if (allProxies.isEmpty()) {
                 onMainDispatcher { snackbar("В этой группе нет прокси!").show() }
@@ -2332,7 +2333,8 @@ class ConfigurationFragment @JvmOverloads constructor(
     private fun showProtocolPriorityDialog(groupId: Long) {
         runOnDefaultDispatcher {
             val proxies = SagerDatabase.proxyDao.getByGroup(groupId)
-            val protocols = proxies.map { it.displayType().uppercase() }.distinct().sorted()
+            val protocols = proxies.map { it.displayType().lowercase() }.distinct().sorted()
+            val currentPriority = DataStore.getGroupProtocolPriority(groupId) ?: "vless"
 
             onMainDispatcher {
                 if (protocols.isEmpty()) {
@@ -2340,10 +2342,25 @@ class ConfigurationFragment @JvmOverloads constructor(
                     return@onMainDispatcher
                 }
 
+                var selectedIndex = protocols.indexOf(currentPriority).takeIf { it >= 0 } ?: 0
+                val labels = protocols.map { it.uppercase() }.toTypedArray()
                 MaterialAlertDialogBuilder(requireContext())
                     .setTitle(R.string.group_protocol_priority_title)
-                    .setMessage(protocols.joinToString(separator = "\n"))
-                    .setPositiveButton(android.R.string.ok, null)
+                    .setSingleChoiceItems(labels, selectedIndex) { _, which ->
+                        selectedIndex = which
+                    }
+                    .setPositiveButton(android.R.string.ok) { _, _ ->
+                        val selectedProtocol = protocols[selectedIndex]
+                        DataStore.setGroupProtocolPriority(groupId, selectedProtocol)
+                        GroupManager.postReload(groupId)
+                        snackbar("Приоритет протокола: ${selectedProtocol.uppercase()}").show()
+                    }
+                    .setNeutralButton("VLESS") { _, _ ->
+                        DataStore.setGroupProtocolPriority(groupId, "vless")
+                        GroupManager.postReload(groupId)
+                        snackbar("Приоритет протокола: VLESS").show()
+                    }
+                    .setNegativeButton(android.R.string.cancel, null)
                     .show()
             }
         }
@@ -2512,7 +2529,7 @@ class ConfigurationFragment @JvmOverloads constructor(
     private suspend fun getOrderedProxiesForCurrentGroup(): List<ProxyEntity> {
         val group = DataStore.currentGroup()
         var proxies = SagerDatabase.proxyDao.getByGroup(group.id)
-        proxies = applyGroupOrder(proxies, group.order)
+        proxies = applyGroupOrder(proxies, group.order, group.id)
         return proxies
     }
 
