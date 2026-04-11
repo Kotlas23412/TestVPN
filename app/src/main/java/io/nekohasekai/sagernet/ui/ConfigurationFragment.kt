@@ -936,7 +936,7 @@ class ConfigurationFragment @JvmOverloads constructor(
         }
 
         val group = DataStore.currentGroup()
-        if (group.subscription == null) {
+        if (group.type != GroupType.SUBSCRIPTION) {
             snackbar(getString(R.string.group_not_subscription)).show()
             return
         }
