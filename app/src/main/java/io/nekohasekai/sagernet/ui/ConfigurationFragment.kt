@@ -1124,7 +1124,22 @@ class ConfigurationFragment @JvmOverloads constructor(
 
         val mainJob = runOnDefaultDispatcher {
             try {
-                val profilesList = SagerDatabase.proxyDao.getByGroup(group.id).sortedBy { it.userOrder }
+                fun protocolKey(profile: ProxyEntity): String = when (profile.type) {
+                    ProxyEntity.TYPE_SS -> "ss"
+                    ProxyEntity.TYPE_TROJAN, ProxyEntity.TYPE_TROJAN_GO -> "trojan"
+                    ProxyEntity.TYPE_VMESS -> if (profile.vmessBean?.isVLESS == true) "vless" else "vmess"
+                    else -> "other"
+                }
+                val allowedProtocols = DataStore.autoPilotProtocols
+                    .split(",")
+                    .map { it.trim().lowercase() }
+                    .filter { it.isNotEmpty() }
+                    .toSet()
+                val useAllProtocols = allowedProtocols.isEmpty() || allowedProtocols.contains("all")
+
+                val profilesList = SagerDatabase.proxyDao.getByGroup(group.id)
+                    .sortedBy { it.userOrder }
+                    .filter { useAllProtocols || allowedProtocols.contains(protocolKey(it)) }
                 test.proxyN = profilesList.size
                 val deletedProfiles = mutableListOf<ProxyEntity>()
 
@@ -2211,14 +2226,44 @@ class ConfigurationFragment @JvmOverloads constructor(
         val limit = view.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.ap_limit)
         val healthInterval = view.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.ap_health_interval)
         val maxPing = view.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.ap_max_ping)
+        val testUrl = view.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.ap_test_url)
+        val protocolAll = view.findViewById<android.widget.CheckBox>(R.id.ap_protocol_all)
+        val protocolVless = view.findViewById<android.widget.CheckBox>(R.id.ap_protocol_vless)
+        val protocolSs = view.findViewById<android.widget.CheckBox>(R.id.ap_protocol_ss)
+        val protocolTrojan = view.findViewById<android.widget.CheckBox>(R.id.ap_protocol_trojan)
         val combine = view.findViewById<android.widget.CheckBox>(R.id.ap_combine)
         val strictWhitelist = view.findViewById<android.widget.CheckBox>(R.id.ap_strict_whitelist)
 
         limit.setText(DataStore.autoPilotExportLimit.toString())
         healthInterval.setText(DataStore.autoPilotHealthInterval.toString())
         maxPing.setText(DataStore.autoPilotMaxPing.toString())
+        testUrl.setText(DataStore.autoPilotTestUrl.ifBlank { DataStore.connectionTestURL })
         combine.isChecked = DataStore.autoPilotCombine
         strictWhitelist.isChecked = DataStore.autoPilotStrictWhitelist
+        val selectedProtocols = DataStore.autoPilotProtocols
+            .split(",")
+            .map { it.trim().lowercase() }
+            .filter { it.isNotEmpty() }
+            .toSet()
+        val isAllSelected = selectedProtocols.isEmpty() || selectedProtocols.contains("all")
+        protocolAll.isChecked = isAllSelected
+        protocolVless.isChecked = isAllSelected || selectedProtocols.contains("vless")
+        protocolSs.isChecked = isAllSelected || selectedProtocols.contains("ss")
+        protocolTrojan.isChecked = isAllSelected || selectedProtocols.contains("trojan")
+        fun setProtocolChecksEnabled(enabled: Boolean) {
+            protocolVless.isEnabled = enabled
+            protocolSs.isEnabled = enabled
+            protocolTrojan.isEnabled = enabled
+        }
+        setProtocolChecksEnabled(!protocolAll.isChecked)
+        protocolAll.setOnCheckedChangeListener { _, checked ->
+            if (checked) {
+                protocolVless.isChecked = false
+                protocolSs.isChecked = false
+                protocolTrojan.isChecked = false
+            }
+            setProtocolChecksEnabled(!checked)
+        }
 
         MaterialAlertDialogBuilder(requireContext())
             .setTitle("🤖 AutoPilot")
@@ -2227,40 +2272,17 @@ class ConfigurationFragment @JvmOverloads constructor(
                 DataStore.autoPilotExportLimit = limit.text?.toString()?.toIntOrNull() ?: 10
                 DataStore.autoPilotHealthInterval = healthInterval.text?.toString()?.toIntOrNull() ?: 10
                 DataStore.autoPilotMaxPing = maxPing.text?.toString()?.toIntOrNull() ?: 3000
-                DataStore.autoPilotCombine = combine.isChecked
-                DataStore.autoPilotStrictWhitelist = strictWhitelist.isChecked
-                AutoPilotService.start(requireContext())
-                snackbar("AutoPilot запущен").show()
-            }
-            .setNeutralButton("Остановить") { _, _ ->
-                AutoPilotService.stop(requireContext())
-                snackbar("AutoPilot остановится после финализации цикла").show()
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
-    }
-
-    private fun showAutoPilotSettingsDialog() {
-        val view = layoutInflater.inflate(R.layout.dialog_autopilot_settings, null)
-        val limit = view.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.ap_limit)
-        val healthInterval = view.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.ap_health_interval)
-        val maxPing = view.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.ap_max_ping)
-        val combine = view.findViewById<android.widget.CheckBox>(R.id.ap_combine)
-        val strictWhitelist = view.findViewById<android.widget.CheckBox>(R.id.ap_strict_whitelist)
-
-        limit.setText(DataStore.autoPilotExportLimit.toString())
-        healthInterval.setText(DataStore.autoPilotHealthInterval.toString())
-        maxPing.setText(DataStore.autoPilotMaxPing.toString())
-        combine.isChecked = DataStore.autoPilotCombine
-        strictWhitelist.isChecked = DataStore.autoPilotStrictWhitelist
-
-        MaterialAlertDialogBuilder(requireContext())
-            .setTitle("🤖 AutoPilot")
-            .setView(view)
-            .setPositiveButton("Запустить") { _, _ ->
-                DataStore.autoPilotExportLimit = limit.text?.toString()?.toIntOrNull() ?: 10
-                DataStore.autoPilotHealthInterval = healthInterval.text?.toString()?.toIntOrNull() ?: 10
-                DataStore.autoPilotMaxPing = maxPing.text?.toString()?.toIntOrNull() ?: 3000
+                DataStore.autoPilotTestUrl = testUrl.text?.toString()?.trim().orEmpty()
+                val protocolSelection = if (protocolAll.isChecked) {
+                    "all"
+                } else {
+                    buildList {
+                        if (protocolVless.isChecked) add("vless")
+                        if (protocolSs.isChecked) add("ss")
+                        if (protocolTrojan.isChecked) add("trojan")
+                    }.joinToString(",").ifBlank { "all" }
+                }
+                DataStore.autoPilotProtocols = protocolSelection
                 DataStore.autoPilotCombine = combine.isChecked
                 DataStore.autoPilotStrictWhitelist = strictWhitelist.isChecked
                 AutoPilotService.start(requireContext())

@@ -162,6 +162,7 @@ object Key {
     const val AP_HEALTH_INTERVAL = "apHealthInterval"
     const val AP_DEAD_THRESHOLD = "apDeadThreshold"
     const val AP_COMBINE = "apCombine"
+    const val AP_PROTOCOLS = "apProtocols"
 }
 
 object TunImplementation {

@@ -333,6 +333,10 @@ object DataStore : OnPreferenceDataStoreChangeListener {
         get() = profileCacheStore.getBoolean(Key.AP_COMBINE) ?: true
         set(value) = profileCacheStore.putBoolean(Key.AP_COMBINE, value)
 
+    var autoPilotProtocols: String
+        get() = profileCacheStore.getString(Key.AP_PROTOCOLS) ?: "all"
+        set(value) = profileCacheStore.putString(Key.AP_PROTOCOLS, value)
+
     var autoPilotStrictWhitelist: Boolean
         get() = profileCacheStore.getBoolean("apStrictWhitelist") ?: false
         set(value) = profileCacheStore.putBoolean("apStrictWhitelist", value)
