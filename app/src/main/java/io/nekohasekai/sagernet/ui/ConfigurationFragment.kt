@@ -641,7 +641,7 @@ class ConfigurationFragment @JvmOverloads constructor(
                         }
                     }
                     return@filter false
-                }
+                }.sortedBy { it.userOrder }
                 test.proxyN = profilesList.size
                 val profiles = ConcurrentLinkedQueue(profilesList)
                 repeat(DataStore.connectionTestConcurrent) {
@@ -783,7 +783,7 @@ class ConfigurationFragment @JvmOverloads constructor(
 
         val mainJob = runOnDefaultDispatcher {
             try {
-                val profilesList = SagerDatabase.proxyDao.getByGroup(group.id)
+                val profilesList = SagerDatabase.proxyDao.getByGroup(group.id).sortedBy { it.userOrder }
                 test.proxyN = profilesList.size
                 val profiles = ConcurrentLinkedQueue(profilesList)
 
@@ -865,7 +865,7 @@ class ConfigurationFragment @JvmOverloads constructor(
 
         val mainJob = runOnDefaultDispatcher {
             try {
-                val profilesList = SagerDatabase.proxyDao.getByGroup(group.id)
+                val profilesList = SagerDatabase.proxyDao.getByGroup(group.id).sortedBy { it.userOrder }
                 test.proxyN = profilesList.size
                 val profiles = ConcurrentLinkedQueue(profilesList)
                 repeat(DataStore.connectionTestConcurrent) {
@@ -986,7 +986,7 @@ class ConfigurationFragment @JvmOverloads constructor(
 
         val mainJob = runOnDefaultDispatcher {
             try {
-                val profilesList = SagerDatabase.proxyDao.getByGroup(group.id)
+                val profilesList = SagerDatabase.proxyDao.getByGroup(group.id).sortedBy { it.userOrder }
                 test.proxyN = profilesList.size
                 var deletedCount = 0
 
@@ -1074,6 +1074,21 @@ class ConfigurationFragment @JvmOverloads constructor(
             if (dialog.isShowing) dialog.dismiss()
             runOnDefaultDispatcher {
                 mainJob.cancel()
+                withContext(NonCancellable) {
+                    onMainDispatcher {
+                        DataStore.selectedProxy = oldSelected
+                        ProfileManager.postUpdate(oldSelected)
+                        if (wasRunning) {
+                            if (DataStore.serviceState.canStop) {
+                                SagerNet.reloadService()
+                            } else {
+                                SagerNet.startService()
+                            }
+                        } else if (DataStore.serviceState.started) {
+                            SagerNet.stopService()
+                        }
+                    }
+                }
                 GroupManager.postReload(group.id)
                 DataStore.runningTest = false
             }
@@ -1108,7 +1123,7 @@ class ConfigurationFragment @JvmOverloads constructor(
 
         val mainJob = runOnDefaultDispatcher {
             try {
-                val profilesList = SagerDatabase.proxyDao.getByGroup(group.id)
+                val profilesList = SagerDatabase.proxyDao.getByGroup(group.id).sortedBy { it.userOrder }
                 test.proxyN = profilesList.size
                 val deletedProfiles = mutableListOf<ProxyEntity>()
 
