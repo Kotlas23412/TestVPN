@@ -186,6 +186,7 @@ object GroupOrder {
     const val ORIGIN = 0
     const val BY_NAME = 1
     const val BY_DELAY = 2
+    const val BY_PROTOCOL = 3
 }
 
 object Action {
