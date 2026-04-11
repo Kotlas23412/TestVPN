@@ -132,6 +132,9 @@
                         <item
                             android:id="@+id/action_order_by_delay"
                             android:title="@string/group_order_by_delay" />
+                        <item
+                            android:id="@+id/action_order_by_protocol"
+                            android:title="@string/group_order_by_protocol" />
                     </group>
                 </menu>
             </item>
