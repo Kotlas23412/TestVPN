@@ -120,26 +120,38 @@ import io.nekohasekai.sagernet.bg.proto.FullTestResult
 import io.nekohasekai.sagernet.utils.GitHubExporter
 
 private fun applyGroupOrder(proxies: List<ProxyEntity>, order: Int, groupId: Long): List<ProxyEntity> {
+    fun toProtocolPriorityKey(displayType: String): String {
+        val value = displayType.lowercase()
+        return when {
+            value.contains("vless") -> "vless"
+            value.contains("shadow") -> "ss"
+            value.contains("trojan") -> "trojan"
+            else -> value
+        }
+    }
+
     return when (order) {
         GroupOrder.BY_NAME -> proxies.sortedBy { it.displayName() }
         GroupOrder.BY_DELAY -> proxies.sortedBy { if (it.status == 1) it.ping else 114514 }
         GroupOrder.BY_PROTOCOL -> {
-            val preferredProtocol = DataStore.getGroupProtocolPriority(groupId) ?: "vless"
-            val protocolBestPing = proxies.groupBy { it.displayType().lowercase() }
+            val preferredProtocol = DataStore.getGroupProtocolPriority(groupId)
+                ?.takeIf { it == "vless" || it == "ss" || it == "trojan" }
+                ?: "vless"
+            val protocolBestPing = proxies.groupBy { toProtocolPriorityKey(it.displayType()) }
                 .mapValues { (_, list) ->
                     list.filter { it.status == 1 }.minOfOrNull { it.ping } ?: Int.MAX_VALUE
                 }
             proxies.sortedWith(
                 compareBy<ProxyEntity> { proxy ->
-                    if (proxy.displayType().equals(preferredProtocol, ignoreCase = true)) {
+                    if (toProtocolPriorityKey(proxy.displayType()) == preferredProtocol) {
                         0
                     } else {
                         1
                     }
                 }.thenBy { proxy ->
-                    protocolBestPing[proxy.displayType().lowercase()] ?: Int.MAX_VALUE
+                    protocolBestPing[toProtocolPriorityKey(proxy.displayType())] ?: Int.MAX_VALUE
                 }
-                    .thenBy { it.displayType().lowercase() }
+                    .thenBy { toProtocolPriorityKey(it.displayType()) }
                         .thenBy { if (it.status == 1) it.ping else Int.MAX_VALUE }
                         .thenBy { it.displayName().lowercase() }
             )
@@ -1524,6 +1536,7 @@ class ConfigurationFragment @JvmOverloads constructor(
             byProtocol.setOnMenuItemClickListener {
                 it.isChecked = true
                 updateTo(GroupOrder.BY_PROTOCOL)
+                showProtocolPriorityDialog(proxyGroup.id)
                 true
             }
         }
@@ -2331,10 +2344,31 @@ class ConfigurationFragment @JvmOverloads constructor(
     }
 
     private fun showProtocolPriorityDialog(groupId: Long) {
+        fun toProtocolPriorityKey(displayType: String): String {
+            val value = displayType.lowercase()
+            return when {
+                value.contains("vless") -> "vless"
+                value.contains("shadow") -> "ss"
+                value.contains("trojan") -> "trojan"
+                else -> value
+            }
+        }
+        fun protocolLabel(key: String): String = when (key) {
+            "vless" -> "VLESS"
+            "ss" -> "SS"
+            "trojan" -> "TROJAN"
+            else -> key.uppercase()
+        }
+
         runOnDefaultDispatcher {
             val proxies = SagerDatabase.proxyDao.getByGroup(groupId)
-            val protocols = proxies.map { it.displayType().lowercase() }.distinct().sorted()
-            val currentPriority = DataStore.getGroupProtocolPriority(groupId) ?: "vless"
+            val supportedKeys = listOf("vless", "ss", "trojan")
+            val protocols = proxies.map { toProtocolPriorityKey(it.displayType()) }
+                .distinct()
+                .filter { it in supportedKeys }
+            val currentPriority = DataStore.getGroupProtocolPriority(groupId)
+                ?.takeIf { it in supportedKeys }
+                ?: "vless"
 
             onMainDispatcher {
                 if (protocols.isEmpty()) {
@@ -2343,7 +2377,7 @@ class ConfigurationFragment @JvmOverloads constructor(
                 }
 
                 var selectedIndex = protocols.indexOf(currentPriority).takeIf { it >= 0 } ?: 0
-                val labels = protocols.map { it.uppercase() }.toTypedArray()
+                val labels = protocols.map { protocolLabel(it) }.toTypedArray()
                 MaterialAlertDialogBuilder(requireContext())
                     .setTitle(R.string.group_protocol_priority_title)
                     .setSingleChoiceItems(labels, selectedIndex) { _, which ->
@@ -2353,7 +2387,7 @@ class ConfigurationFragment @JvmOverloads constructor(
                         val selectedProtocol = protocols[selectedIndex]
                         DataStore.setGroupProtocolPriority(groupId, selectedProtocol)
                         runOnDefaultDispatcher { GroupManager.postReload(groupId) }
-                        snackbar("Приоритет протокола: ${selectedProtocol.uppercase()}").show()
+                        snackbar("Приоритет протокола: ${protocolLabel(selectedProtocol)}").show()
                     }
                     .setNeutralButton("VLESS") { _, _ ->
                         DataStore.setGroupProtocolPriority(groupId, "vless")
