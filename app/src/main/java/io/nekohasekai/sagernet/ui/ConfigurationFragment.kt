@@ -118,6 +118,52 @@ import io.nekohasekai.sagernet.bg.proto.FullTestInstance
 import io.nekohasekai.sagernet.bg.proto.FullTestResult
 import io.nekohasekai.sagernet.utils.GitHubExporter
 
+private fun protocolPriorityKey(groupId: Long): String = "group_protocol_priority_$groupId"
+
+private fun getPreferredProtocol(groupId: Long): String? {
+    return DataStore.configurationStore.getString(protocolPriorityKey(groupId))
+        ?.takeIf { it.isNotBlank() }
+}
+
+private fun setPreferredProtocol(groupId: Long, protocol: String?) {
+    val key = protocolPriorityKey(groupId)
+    if (protocol.isNullOrBlank()) {
+        DataStore.configurationStore.remove(key)
+    } else {
+        DataStore.configurationStore.putString(key, protocol.lowercase())
+    }
+}
+
+private fun applyGroupOrder(proxies: List<ProxyEntity>, order: Int, groupId: Long): List<ProxyEntity> {
+    return when (order) {
+        GroupOrder.BY_NAME -> proxies.sortedBy { it.displayName() }
+        GroupOrder.BY_DELAY -> proxies.sortedBy { if (it.status == 1) it.ping else 114514 }
+        GroupOrder.BY_PROTOCOL -> {
+            val preferredProtocol = getPreferredProtocol(groupId)
+            val protocolBestPing = proxies.groupBy { it.displayType().lowercase() }
+                .mapValues { (_, list) ->
+                    list.filter { it.status == 1 }.minOfOrNull { it.ping } ?: Int.MAX_VALUE
+                }
+            proxies.sortedWith(
+                compareBy<ProxyEntity> { proxy ->
+                    if (preferredProtocol != null && proxy.displayType().equals(preferredProtocol, ignoreCase = true)) {
+                        0
+                    } else {
+                        1
+                    }
+                }.thenBy { proxy ->
+                    protocolBestPing[proxy.displayType().lowercase()] ?: Int.MAX_VALUE
+                }
+                    .thenBy { it.displayType().lowercase() }
+                    .thenBy { if (it.status == 1) it.ping else Int.MAX_VALUE }
+                    .thenBy { it.displayName().lowercase() }
+            )
+        }
+
+        else -> proxies
+    }
+}
+
 class ConfigurationFragment @JvmOverloads constructor(
     val select: Boolean = false, val selectedItem: ProxyEntity? = null, val titleRes: Int = 0
 ) : ToolbarFragment(R.layout.layout_group_list),
@@ -1112,6 +1158,7 @@ class ConfigurationFragment @JvmOverloads constructor(
             val origin = menu.findItem(R.id.action_order_origin)
             val byName = menu.findItem(R.id.action_order_by_name)
             val byDelay = menu.findItem(R.id.action_order_by_delay)
+            val byProtocol = menu.findItem(R.id.action_order_by_protocol)
             when (proxyGroup.order) {
                 GroupOrder.ORIGIN -> {
                     origin.isChecked = true
@@ -1123,6 +1170,10 @@ class ConfigurationFragment @JvmOverloads constructor(
 
                 GroupOrder.BY_DELAY -> {
                     byDelay.isChecked = true
+                }
+
+                GroupOrder.BY_PROTOCOL -> {
+                    byProtocol.isChecked = true
                 }
             }
 
@@ -1147,6 +1198,12 @@ class ConfigurationFragment @JvmOverloads constructor(
             byDelay.setOnMenuItemClickListener {
                 it.isChecked = true
                 updateTo(GroupOrder.BY_DELAY)
+                true
+            }
+            byProtocol.setOnMenuItemClickListener {
+                it.isChecked = true
+                updateTo(GroupOrder.BY_PROTOCOL)
+                (parentFragment as? ConfigurationFragment)?.showProtocolPriorityDialog(proxyGroup.id)
                 true
             }
         }
@@ -1423,17 +1480,7 @@ class ConfigurationFragment @JvmOverloads constructor(
 
             fun reloadProfiles() {
                 var newProfiles = SagerDatabase.proxyDao.getByGroup(proxyGroup.id)
-                when (proxyGroup.order) {
-                    GroupOrder.BY_NAME -> {
-                        newProfiles = newProfiles.sortedBy { it.displayName() }
-
-                    }
-
-                    GroupOrder.BY_DELAY -> {
-                        newProfiles =
-                            newProfiles.sortedBy { if (it.status == 1) it.ping else 114514 }
-                    }
-                }
+                newProfiles = applyGroupOrder(newProfiles, proxyGroup.order, proxyGroup.id)
 
                 configurationList.clear()
                 configurationList.putAll(newProfiles.associateBy { it.id })
@@ -1904,11 +1951,7 @@ class ConfigurationFragment @JvmOverloads constructor(
             var allProxies = SagerDatabase.proxyDao.getByGroup(group.id)
 
             // Применяем сортировку в соответствии с настройками группы
-            allProxies = when (group.order) {
-                GroupOrder.BY_NAME -> allProxies.sortedBy { it.displayName() }
-                GroupOrder.BY_DELAY -> allProxies.sortedBy { if (it.status == 1) it.ping else 114514 }
-                else -> allProxies // GroupOrder.ORIGIN - исходный порядок
-            }
+            allProxies = applyGroupOrder(allProxies, group.order, group.id)
 
             if (allProxies.isEmpty()) {
                 onMainDispatcher { snackbar("В этой группе нет прокси!").show() }
@@ -2130,12 +2173,45 @@ class ConfigurationFragment @JvmOverloads constructor(
     private suspend fun getOrderedProxiesForCurrentGroup(): List<ProxyEntity> {
         val group = DataStore.currentGroup()
         var proxies = SagerDatabase.proxyDao.getByGroup(group.id)
-        proxies = when (group.order) {
-            GroupOrder.BY_NAME -> proxies.sortedBy { it.displayName() }
-            GroupOrder.BY_DELAY -> proxies.sortedBy { if (it.status == 1) it.ping else 114514 }
-            else -> proxies
-        }
+        proxies = applyGroupOrder(proxies, group.order, group.id)
         return proxies
+    }
+
+    fun showProtocolPriorityDialog(groupId: Long) {
+        runOnDefaultDispatcher {
+            val protocols = SagerDatabase.proxyDao.getByGroup(groupId)
+                .map { it.displayType() }
+                .distinct()
+                .sortedBy { it.lowercase() }
+
+            onMainDispatcher {
+                if (protocols.isEmpty()) {
+                    snackbar(getString(R.string.group_protocol_priority_empty)).show()
+                    return@onMainDispatcher
+                }
+
+                val preferredProtocol = getPreferredProtocol(groupId)
+                val options = mutableListOf(getString(R.string.group_protocol_priority_auto))
+                options.addAll(protocols)
+                val selectedIndex = protocols.indexOfFirst {
+                    it.equals(preferredProtocol, ignoreCase = true)
+                }.let { if (it >= 0) it + 1 else 0 }
+
+                MaterialAlertDialogBuilder(requireContext())
+                    .setTitle(R.string.group_protocol_priority_title)
+                    .setSingleChoiceItems(options.toTypedArray(), selectedIndex) { dialog, which ->
+                        if (which == 0) {
+                            setPreferredProtocol(groupId, null)
+                        } else {
+                            setPreferredProtocol(groupId, options[which])
+                        }
+                        getCurrentGroupFragment()?.adapter?.reloadProfiles()
+                        dialog.dismiss()
+                    }
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show()
+            }
+        }
     }
 
     private suspend fun syncExportToAutoPilotBestGroup(list: List<ProxyEntity>): String? {
