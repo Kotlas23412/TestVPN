@@ -478,6 +478,7 @@ class ConfigurationFragment @JvmOverloads constructor(
             // 7, 8. Ручные экспорты
             R.id.action_github_export_selected -> runGithubExportSelected()
             R.id.action_github_export_country -> runGithubExportByCountry()
+            R.id.action_protocol_priority -> showProtocolPriorityDialog(DataStore.currentGroupId())
             // 9. Менеджер GitHub
             R.id.action_github_manager -> startActivity(Intent(requireActivity(), GitHubManagerActivity::class.java))
 
