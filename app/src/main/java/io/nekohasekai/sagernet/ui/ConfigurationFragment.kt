@@ -492,6 +492,8 @@ class ConfigurationFragment @JvmOverloads constructor(
             R.id.action_subscription_manual_test_cleanup -> runSubscriptionManualTestCleanup()
 
             // 7, 8. Ручные экспорты
+            R.id.action_github_export_auto_url_test -> runGithubAutoExport(useHttpsTest = false)
+            R.id.action_github_export_auto_https_test -> runGithubAutoExport(useHttpsTest = true)
             R.id.action_github_export_selected -> runGithubExportSelected()
             R.id.action_github_export_country -> runGithubExportByCountry()
             R.id.action_protocol_priority -> showProtocolPriorityDialog(DataStore.currentGroupId())
