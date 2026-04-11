@@ -340,4 +340,23 @@ object DataStore : OnPreferenceDataStoreChangeListener {
     var autoPilotKeepVpn: Boolean
         get() = profileCacheStore.getBoolean("apKeepVpn") ?: false
         set(value) = profileCacheStore.putBoolean("apKeepVpn", value)
+
+    fun getGroupProtocolPriority(groupId: Long): String? {
+        if (groupId <= 0L) return null
+        return configurationStore.getString("group_protocol_priority_$groupId")
+            ?.trim()
+            ?.lowercase()
+            ?.takeIf { it.isNotEmpty() }
+    }
+
+    fun setGroupProtocolPriority(groupId: Long, protocol: String?) {
+        if (groupId <= 0L) return
+        val key = "group_protocol_priority_$groupId"
+        val value = protocol?.trim()?.lowercase().orEmpty()
+        if (value.isEmpty()) {
+            configurationStore.putString(key, null)
+        } else {
+            configurationStore.putString(key, value)
+        }
+    }
 }
