@@ -2329,6 +2329,26 @@ class ConfigurationFragment @JvmOverloads constructor(
         }
     }
 
+    private fun showProtocolPriorityDialog(groupId: Long) {
+        runOnDefaultDispatcher {
+            val proxies = SagerDatabase.proxyDao.getByGroup(groupId)
+            val protocols = proxies.map { it.displayType().uppercase() }.distinct().sorted()
+
+            onMainDispatcher {
+                if (protocols.isEmpty()) {
+                    snackbar(getString(R.string.group_protocol_priority_empty)).show()
+                    return@onMainDispatcher
+                }
+
+                MaterialAlertDialogBuilder(requireContext())
+                    .setTitle(R.string.group_protocol_priority_title)
+                    .setMessage(protocols.joinToString(separator = "\n"))
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show()
+            }
+        }
+    }
+
     fun runGithubExportByCountry() {
         runOnDefaultDispatcher {
             val allProxies = SagerDatabase.proxyDao.getByGroup(DataStore.currentGroupId())
