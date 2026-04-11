@@ -42,6 +42,7 @@ import io.nekohasekai.sagernet.Key
 import io.nekohasekai.sagernet.R
 import io.nekohasekai.sagernet.SagerNet
 import io.nekohasekai.sagernet.aidl.TrafficData
+import io.nekohasekai.sagernet.bg.AutoPilotService
 import io.nekohasekai.sagernet.bg.BaseService
 import io.nekohasekai.sagernet.bg.proto.UrlTest
 import io.nekohasekai.sagernet.database.DataStore
@@ -489,11 +490,11 @@ class ConfigurationFragment @JvmOverloads constructor(
             R.id.action_connection_tcp_ping -> pingTest(false)
             R.id.action_connection_url_test -> urlTest()
             R.id.action_subscription_auto_https_cleanup -> runSubscriptionAutoHttpsCleanup()
-            R.id.action_subscription_manual_test_cleanup -> runSubscriptionManualTestCleanup()
 
             // 7, 8. Ручные экспорты
             R.id.action_github_export_selected -> runGithubExportSelected()
             R.id.action_github_export_country -> runGithubExportByCountry()
+            R.id.action_autopilot_settings -> showAutoPilotSettingsDialog()
             R.id.action_protocol_priority -> showProtocolPriorityDialog(DataStore.currentGroupId())
             // 9. Менеджер GitHub
             R.id.action_github_manager -> startActivity(Intent(requireActivity(), GitHubManagerActivity::class.java))
@@ -641,7 +642,7 @@ class ConfigurationFragment @JvmOverloads constructor(
                         }
                     }
                     return@filter false
-                }
+                }.sortedBy { it.userOrder }
                 test.proxyN = profilesList.size
                 val profiles = ConcurrentLinkedQueue(profilesList)
                 repeat(DataStore.connectionTestConcurrent) {
@@ -783,7 +784,7 @@ class ConfigurationFragment @JvmOverloads constructor(
 
         val mainJob = runOnDefaultDispatcher {
             try {
-                val profilesList = SagerDatabase.proxyDao.getByGroup(group.id)
+                val profilesList = SagerDatabase.proxyDao.getByGroup(group.id).sortedBy { it.userOrder }
                 test.proxyN = profilesList.size
                 val profiles = ConcurrentLinkedQueue(profilesList)
 
@@ -865,7 +866,7 @@ class ConfigurationFragment @JvmOverloads constructor(
 
         val mainJob = runOnDefaultDispatcher {
             try {
-                val profilesList = SagerDatabase.proxyDao.getByGroup(group.id)
+                val profilesList = SagerDatabase.proxyDao.getByGroup(group.id).sortedBy { it.userOrder }
                 test.proxyN = profilesList.size
                 val profiles = ConcurrentLinkedQueue(profilesList)
                 repeat(DataStore.connectionTestConcurrent) {
@@ -986,7 +987,7 @@ class ConfigurationFragment @JvmOverloads constructor(
 
         val mainJob = runOnDefaultDispatcher {
             try {
-                val profilesList = SagerDatabase.proxyDao.getByGroup(group.id)
+                val profilesList = SagerDatabase.proxyDao.getByGroup(group.id).sortedBy { it.userOrder }
                 test.proxyN = profilesList.size
                 var deletedCount = 0
 
@@ -1074,6 +1075,21 @@ class ConfigurationFragment @JvmOverloads constructor(
             if (dialog.isShowing) dialog.dismiss()
             runOnDefaultDispatcher {
                 mainJob.cancel()
+                withContext(NonCancellable) {
+                    onMainDispatcher {
+                        DataStore.selectedProxy = oldSelected
+                        ProfileManager.postUpdate(oldSelected)
+                        if (wasRunning) {
+                            if (DataStore.serviceState.canStop) {
+                                SagerNet.reloadService()
+                            } else {
+                                SagerNet.startService()
+                            }
+                        } else if (DataStore.serviceState.started) {
+                            SagerNet.stopService()
+                        }
+                    }
+                }
                 GroupManager.postReload(group.id)
                 DataStore.runningTest = false
             }
@@ -1108,7 +1124,7 @@ class ConfigurationFragment @JvmOverloads constructor(
 
         val mainJob = runOnDefaultDispatcher {
             try {
-                val profilesList = SagerDatabase.proxyDao.getByGroup(group.id)
+                val profilesList = SagerDatabase.proxyDao.getByGroup(group.id).sortedBy { it.userOrder }
                 test.proxyN = profilesList.size
                 val deletedProfiles = mutableListOf<ProxyEntity>()
 
@@ -2188,6 +2204,40 @@ class ConfigurationFragment @JvmOverloads constructor(
             test.dialogStatus.set(1)
             dialog.hide()
         }
+    }
+
+    private fun showAutoPilotSettingsDialog() {
+        val view = layoutInflater.inflate(R.layout.dialog_autopilot_settings, null)
+        val limit = view.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.ap_limit)
+        val healthInterval = view.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.ap_health_interval)
+        val maxPing = view.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.ap_max_ping)
+        val combine = view.findViewById<android.widget.CheckBox>(R.id.ap_combine)
+        val strictWhitelist = view.findViewById<android.widget.CheckBox>(R.id.ap_strict_whitelist)
+
+        limit.setText(DataStore.autoPilotExportLimit.toString())
+        healthInterval.setText(DataStore.autoPilotHealthInterval.toString())
+        maxPing.setText(DataStore.autoPilotMaxPing.toString())
+        combine.isChecked = DataStore.autoPilotCombine
+        strictWhitelist.isChecked = DataStore.autoPilotStrictWhitelist
+
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle("🤖 AutoPilot")
+            .setView(view)
+            .setPositiveButton("Запустить") { _, _ ->
+                DataStore.autoPilotExportLimit = limit.text?.toString()?.toIntOrNull() ?: 10
+                DataStore.autoPilotHealthInterval = healthInterval.text?.toString()?.toIntOrNull() ?: 10
+                DataStore.autoPilotMaxPing = maxPing.text?.toString()?.toIntOrNull() ?: 3000
+                DataStore.autoPilotCombine = combine.isChecked
+                DataStore.autoPilotStrictWhitelist = strictWhitelist.isChecked
+                AutoPilotService.start(requireContext())
+                snackbar("AutoPilot запущен").show()
+            }
+            .setNeutralButton("Остановить") { _, _ ->
+                AutoPilotService.stop(requireContext())
+                snackbar("AutoPilot остановится после финализации цикла").show()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     fun runGithubExportSelected() {

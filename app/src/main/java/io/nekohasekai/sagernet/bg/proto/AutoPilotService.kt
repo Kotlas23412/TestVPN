@@ -51,6 +51,8 @@ class AutoPilotService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var wakeLock: PowerManager.WakeLock? = null
     private lateinit var nm: NotificationManager
+    @Volatile
+    private var stopRequested = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -66,12 +68,19 @@ class AutoPilotService : Service() {
         when (intent?.action) {
             ACTION_START -> {
                 if (!isRunning) {
+                    stopRequested = false
                     isRunning = true
                     startForegroundSafe("🤖 AutoPilot", "Запуск системы...")
                     launchAutoPilot()
                 }
             }
-            ACTION_STOP -> shutdown()
+            ACTION_STOP -> {
+                stopRequested = true
+                updateForegroundNotif(
+                    "⏹ Завершаем цикл",
+                    "Выполняю финальный тест найденных и экспорт, затем остановлюсь"
+                )
+            }
         }
         return START_STICKY
     }
@@ -79,9 +88,13 @@ class AutoPilotService : Service() {
     private fun launchAutoPilot() {
         mainJob = scope.launch {
             val config = loadConfig()
-            val engine = AutoPilotEngine(config) { p ->
-                updateForegroundNotif("🤖 Проверка серверов", "${p.phase} [${p.current}/${p.total}] ✓${p.goodCount}\n${p.currentProxy ?: ""}")
-            }
+            val engine = AutoPilotEngine(
+                config = config,
+                onProgress = { p ->
+                    updateForegroundNotif("🤖 Проверка серверов", "${p.phase} [${p.current}/${p.total}] ✓${p.goodCount}\n${p.currentProxy ?: ""}")
+                },
+                shouldStop = { stopRequested }
+            )
 
             while (isActive) {
                 // 1. Просыпаемся и показываем неотключаемое уведомление процесса
@@ -117,12 +130,24 @@ class AutoPilotService : Service() {
                 // 3. ОБРАБОТКА РЕЗУЛЬТАТОВ (уведомление исчезнет само через 1 мин)
                 if (result.isSkipped) {
                     showResultAndSleep("✅ Всё идеально, сплю", "Рабочих серверов: ${result.exportedCount}\nСлед. проверка через: ${config.healthCheckMinutes} мин")
+                    if (stopRequested) {
+                        shutdown()
+                        break
+                    }
                     delay(config.healthCheckMinutes * 60_000L)
                 } else if (result.success) {
                     showResultAndSleep("🔄 База обновлена", "Живых: ${result.exportedCount} | Умерло: ${result.deadCount}\nСлед. проверка через: ${config.healthCheckMinutes} мин")
+                    if (stopRequested) {
+                        shutdown()
+                        break
+                    }
                     delay(config.healthCheckMinutes * 60_000L)
                 } else {
                     showResultAndSleep("❌ Ошибка проверки", "${result.message}\nПовтор через 5 мин")
+                    if (stopRequested) {
+                        shutdown()
+                        break
+                    }
                     delay(5 * 60_000L)
                 }
             }
@@ -223,6 +248,7 @@ class AutoPilotService : Service() {
     private fun shutdown() {
         mainJob?.cancel()
         isRunning = false
+        stopRequested = false
         try { if (wakeLock?.isHeld == true) wakeLock?.release() } catch (_: Exception) {}
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) { stopForeground(STOP_FOREGROUND_REMOVE) } else { @Suppress("DEPRECATION") stopForeground(true) }
         try { nm.cancel(RESULT_ID) } catch (_: Exception) {}

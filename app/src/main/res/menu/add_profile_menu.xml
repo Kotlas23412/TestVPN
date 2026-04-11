@@ -109,14 +109,14 @@
                 android:id="@+id/action_subscription_auto_https_cleanup"
                 android:title="@string/subscription_auto_https_cleanup" />
             <item
-                android:id="@+id/action_subscription_manual_test_cleanup"
-                android:title="@string/subscription_manual_test_cleanup" />
-            <item
                 android:id="@+id/action_github_export_selected"
                 android:title="@string/github_export_selected" />
             <item
                 android:id="@+id/action_github_export_country"
                 android:title="@string/github_export_by_country" />
+            <item
+                android:id="@+id/action_autopilot_settings"
+                android:title="🤖 AutoPilot" />
             <item
                 android:id="@+id/action_github_manager"
                 android:title="📁 Менеджер GitHub"
