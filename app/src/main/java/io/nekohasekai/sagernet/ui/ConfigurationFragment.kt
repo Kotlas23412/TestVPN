@@ -951,7 +951,7 @@ class ConfigurationFragment @JvmOverloads constructor(
         }
 
         val group = DataStore.currentGroup()
-        if (group.type != GroupType.SUBSCRIPTION) {
+        if (!group.supportsSubscriptionAutoCheck()) {
             snackbar(getString(R.string.group_not_subscription)).show()
             return
         }
@@ -1043,6 +1043,12 @@ class ConfigurationFragment @JvmOverloads constructor(
         }
     }
 
+    private fun ProxyGroup.supportsSubscriptionAutoCheck(): Boolean {
+        if (type == GroupType.SUBSCRIPTION) return true
+        val autoPilotBestName = "🚀 AutoPilot Best"
+        return name?.trim() == autoPilotBestName || displayName().trim() == autoPilotBestName
+    }
+
     private suspend fun waitForServiceConnected(timeoutMs: Long): Boolean {
         val start = SystemClock.elapsedRealtime()
         while (SystemClock.elapsedRealtime() - start < timeoutMs) {
@@ -1061,7 +1067,7 @@ class ConfigurationFragment @JvmOverloads constructor(
         }
 
         val group = DataStore.currentGroup()
-        if (group.type != GroupType.SUBSCRIPTION) {
+        if (!group.supportsSubscriptionAutoCheck()) {
             snackbar(getString(R.string.group_not_subscription)).show()
             return
         }
@@ -1184,7 +1190,7 @@ class ConfigurationFragment @JvmOverloads constructor(
         }
 
         val group = DataStore.currentGroup()
-        if (group.type != GroupType.SUBSCRIPTION) {
+        if (!group.supportsSubscriptionAutoCheck()) {
             snackbar(getString(R.string.group_not_subscription)).show()
             return
         }
