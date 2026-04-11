@@ -405,6 +405,9 @@
     <string name="group_order_by_name">By Name</string>
     <string name="group_order_by_delay">By Delay</string>
     <string name="group_order_by_protocol">By Protocol</string>
+    <string name="group_protocol_priority_title">Protocol at top</string>
+    <string name="group_protocol_priority_auto">Auto (best ping)</string>
+    <string name="group_protocol_priority_empty">No protocols available in this group</string>
     <string name="plugin_exists_but_on_shit_system">Profile %s requires the %s plugin, but your
         proprietary equipment vendor (usually surveillance capital giants and malware maker)
         tampered with your Android, making the plugin unusable.</string>

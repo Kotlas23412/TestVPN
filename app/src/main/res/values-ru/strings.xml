@@ -194,6 +194,9 @@
 <string name="group_order_by_delay">По задержке</string>
 <string name="group_order_by_name">По имени</string>
 <string name="group_order_by_protocol">По протоколу</string>
+<string name="group_protocol_priority_title">Протокол сверху</string>
+<string name="group_protocol_priority_auto">Авто (лучший пинг)</string>
+<string name="group_protocol_priority_empty">В этой группе нет протоколов</string>
 <string name="group_order_origin">По источнику</string>
 <string name="group_settings">Настройки группы</string>
 <string name="group_show_diff">Сравнить группы</string>
