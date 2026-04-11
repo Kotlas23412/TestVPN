@@ -118,6 +118,9 @@
                 android:id="@+id/action_github_export_country"
                 android:title="@string/github_export_by_country" />
             <item
+                android:id="@+id/action_autopilot_settings"
+                android:title="🤖 AutoPilot" />
+            <item
                 android:id="@+id/action_github_manager"
                 android:title="📁 Менеджер GitHub"
                 app:showAsAction="never" />

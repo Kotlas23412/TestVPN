@@ -52,7 +52,8 @@ data class AutoPilotResult(
 
 class AutoPilotEngine(
     private val config: AutoPilotConfig,
-    private val onProgress: suspend (AutoPilotProgress) -> Unit = {}
+    private val onProgress: suspend (AutoPilotProgress) -> Unit = {},
+    private val shouldStop: () -> Boolean = { false }
 ) {
     private val whitelistDomains = listOf(
         "gov.ru", "kremlin.ru", "gosuslugi.ru", "gu-st.ru", "nalog.ru", "mos.ru", "pfrf.ru",
@@ -160,6 +161,7 @@ class AutoPilotEngine(
 
             var updatedCount = 0
             for (gid in config.groupIds) {
+                if (shouldStop()) break
                 val group = SagerDatabase.groupDao.getById(gid)
                 if (group != null && group.type == GroupType.SUBSCRIPTION) {
                     try { GroupUpdater.startUpdate(group, false) } catch (_: Exception) {}
@@ -171,6 +173,7 @@ class AutoPilotEngine(
 
             val allProxies = mutableListOf<ProxyEntity>()
             for (gid in config.groupIds) {
+                if (shouldStop()) break
                 allProxies.addAll(SagerDatabase.proxyDao.getByGroup(gid))
             }
             if (allProxies.isEmpty() && survivingProxies.isEmpty()) return@withContext AutoPilotResult(false, "Нет прокси в группах", deadCount = deadCount)
@@ -219,7 +222,11 @@ class AutoPilotEngine(
 
             return@withContext AutoPilotResult(
                 success = exportResult.success,
-                message = "Успешно обновлено.\nЖиво: ${combinedBest.size} | Умерло: $deadCount",
+                message = if (shouldStop()) {
+                    "Остановлено пользователем.\nСохранено: ${combinedBest.size} | Умерло: $deadCount"
+                } else {
+                    "Успешно обновлено.\nЖиво: ${combinedBest.size} | Умерло: $deadCount"
+                },
                 exportedCount = combinedBest.size,
                 deadCount = deadCount,
                 exportedIds = combinedBest.map { it.id },
@@ -342,6 +349,7 @@ class AutoPilotEngine(
                 launch(Dispatchers.IO) {
                     val ut = UrlTest()
                     while (isActive) {
+                        if (shouldStop()) break
                         val p = queue.poll() ?: break
                         try {
                             // ПРОГРЕВ
@@ -389,6 +397,7 @@ class AutoPilotEngine(
 
         for (i in 0 until maxToTest) {
             if (!currentCoroutineContext().isActive) break
+            if (shouldStop()) break
 
             val c = candidates[i]
 
