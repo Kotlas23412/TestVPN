@@ -490,7 +490,6 @@ class ConfigurationFragment @JvmOverloads constructor(
             R.id.action_connection_tcp_ping -> pingTest(false)
             R.id.action_connection_url_test -> urlTest()
             R.id.action_subscription_auto_https_cleanup -> runSubscriptionAutoHttpsCleanup()
-            R.id.action_subscription_manual_test_cleanup -> runSubscriptionManualTestCleanup()
 
             // 7, 8. Ручные экспорты
             R.id.action_github_export_selected -> runGithubExportSelected()
@@ -2205,6 +2204,40 @@ class ConfigurationFragment @JvmOverloads constructor(
             test.dialogStatus.set(1)
             dialog.hide()
         }
+    }
+
+    private fun showAutoPilotSettingsDialog() {
+        val view = layoutInflater.inflate(R.layout.dialog_autopilot_settings, null)
+        val limit = view.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.ap_limit)
+        val healthInterval = view.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.ap_health_interval)
+        val maxPing = view.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.ap_max_ping)
+        val combine = view.findViewById<android.widget.CheckBox>(R.id.ap_combine)
+        val strictWhitelist = view.findViewById<android.widget.CheckBox>(R.id.ap_strict_whitelist)
+
+        limit.setText(DataStore.autoPilotExportLimit.toString())
+        healthInterval.setText(DataStore.autoPilotHealthInterval.toString())
+        maxPing.setText(DataStore.autoPilotMaxPing.toString())
+        combine.isChecked = DataStore.autoPilotCombine
+        strictWhitelist.isChecked = DataStore.autoPilotStrictWhitelist
+
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle("🤖 AutoPilot")
+            .setView(view)
+            .setPositiveButton("Запустить") { _, _ ->
+                DataStore.autoPilotExportLimit = limit.text?.toString()?.toIntOrNull() ?: 10
+                DataStore.autoPilotHealthInterval = healthInterval.text?.toString()?.toIntOrNull() ?: 10
+                DataStore.autoPilotMaxPing = maxPing.text?.toString()?.toIntOrNull() ?: 3000
+                DataStore.autoPilotCombine = combine.isChecked
+                DataStore.autoPilotStrictWhitelist = strictWhitelist.isChecked
+                AutoPilotService.start(requireContext())
+                snackbar("AutoPilot запущен").show()
+            }
+            .setNeutralButton("Остановить") { _, _ ->
+                AutoPilotService.stop(requireContext())
+                snackbar("AutoPilot остановится после финализации цикла").show()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     private fun showAutoPilotSettingsDialog() {
