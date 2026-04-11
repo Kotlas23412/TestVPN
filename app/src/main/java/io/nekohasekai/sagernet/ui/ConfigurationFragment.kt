@@ -2352,12 +2352,12 @@ class ConfigurationFragment @JvmOverloads constructor(
                     .setPositiveButton(android.R.string.ok) { _, _ ->
                         val selectedProtocol = protocols[selectedIndex]
                         DataStore.setGroupProtocolPriority(groupId, selectedProtocol)
-                        GroupManager.postReload(groupId)
+                        runOnDefaultDispatcher { GroupManager.postReload(groupId) }
                         snackbar("Приоритет протокола: ${selectedProtocol.uppercase()}").show()
                     }
                     .setNeutralButton("VLESS") { _, _ ->
                         DataStore.setGroupProtocolPriority(groupId, "vless")
-                        GroupManager.postReload(groupId)
+                        runOnDefaultDispatcher { GroupManager.postReload(groupId) }
                         snackbar("Приоритет протокола: VLESS").show()
                     }
                     .setNegativeButton(android.R.string.cancel, null)
