@@ -2153,7 +2153,32 @@ class ConfigurationFragment @JvmOverloads constructor(
         return proxies
     }
 
+
+    private fun applyGroupOrder(proxies: List<ProxyEntity>, order: Int): List<ProxyEntity> {
+        return when (order) {
+            GroupOrder.BY_NAME -> proxies.sortedBy { it.displayName() }
+            GroupOrder.BY_DELAY -> proxies.sortedBy { if (it.status == 1) it.ping else 114514 }
+            GroupOrder.BY_PROTOCOL -> {
+                val protocolBestPing = proxies.groupBy { it.displayType().lowercase() }
+                    .mapValues { (_, list) ->
+                        list.filter { it.status == 1 }.minOfOrNull { it.ping } ?: Int.MAX_VALUE
+                    }
+                proxies.sortedWith(
+                    compareBy<ProxyEntity> { proxy ->
+                        protocolBestPing[proxy.displayType().lowercase()] ?: Int.MAX_VALUE
+                    }
+                        .thenBy { it.displayType().lowercase() }
+                        .thenBy { if (it.status == 1) it.ping else Int.MAX_VALUE }
+                        .thenBy { it.displayName().lowercase() }
+                )
+            }
+
+            else -> proxies
+        }
+    }
+
     private suspend fun syncExportToAutoPilotBestGroup(list: List<ProxyEntity>): String? {
+
         return try {
             val groupName = "🚀 AutoPilot Best"
             val allGroups = SagerDatabase.groupDao.allGroups()
