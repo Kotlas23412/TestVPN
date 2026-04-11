@@ -230,6 +230,13 @@ class AutoPilotService : Service() {
         groupIds = DataStore.autoPilotGroupIds.split(",").mapNotNull { it.toLongOrNull() },
         exportLimit = DataStore.autoPilotExportLimit,
         maxLatencyMs = DataStore.autoPilotMaxPing.toLong(),
+        testUrl = DataStore.autoPilotTestUrl.ifBlank { DataStore.connectionTestURL },
+        allowedProtocols = DataStore.autoPilotProtocols
+            .split(",")
+            .map { it.trim().lowercase() }
+            .filter { it.isNotEmpty() }
+            .toSet()
+            .ifEmpty { setOf("all") },
         intervalMinutes = DataStore.autoPilotInterval,
         healthCheckMinutes = DataStore.autoPilotHealthInterval,
         deadThreshold = DataStore.autoPilotDeadThreshold,

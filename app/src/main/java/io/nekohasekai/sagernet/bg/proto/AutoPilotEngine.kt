@@ -24,6 +24,8 @@ data class AutoPilotConfig(
     val groupIds: List<Long>,
     val exportLimit: Int = 10,
     val maxLatencyMs: Long = 3000,
+    val testUrl: String = DataStore.connectionTestURL,
+    val allowedProtocols: Set<String> = setOf("all"),
     val intervalMinutes: Int = 60,
     val healthCheckMinutes: Int = 10,
     val deadThreshold: Int = 50,
@@ -55,6 +57,21 @@ class AutoPilotEngine(
     private val onProgress: suspend (AutoPilotProgress) -> Unit = {},
     private val shouldStop: () -> Boolean = { false }
 ) {
+    private fun toProtocolKey(profile: ProxyEntity): String {
+        return when (profile.type) {
+            ProxyEntity.TYPE_SS -> "ss"
+            ProxyEntity.TYPE_TROJAN, ProxyEntity.TYPE_TROJAN_GO -> "trojan"
+            ProxyEntity.TYPE_VMESS -> if (profile.vmessBean?.isVLESS == true) "vless" else "vmess"
+            else -> "other"
+        }
+    }
+
+    private fun isProtocolAllowed(profile: ProxyEntity): Boolean {
+        val allowed = config.allowedProtocols
+        if (allowed.isEmpty() || allowed.contains("all")) return true
+        return allowed.contains(toProtocolKey(profile))
+    }
+
     private val whitelistDomains = listOf(
         "gov.ru", "kremlin.ru", "gosuslugi.ru", "gu-st.ru", "nalog.ru", "mos.ru", "pfrf.ru",
         "cikrf.ru", "izbirkom.ru", "xn--p1ai", "xn--80ajghhoc2aj1c8b.xn--p1ai", "res-nsdi.ru", "auth-nsdi.ru",
@@ -181,10 +198,11 @@ class AutoPilotEngine(
             var uniqueProxies = allProxies.distinctBy {
                 try { "${it.requireBean().serverAddress}:${it.requireBean().serverPort}" }
                 catch (e: Exception) { it.id.toString() }
-            }.filter {
-                val sig = try { "${it.requireBean().serverAddress}:${it.requireBean().serverPort}" } catch (e: Exception) { it.id.toString() }
-                !survivingSignatures.contains(sig)
-            }
+            }.filter { isProtocolAllowed(it) }
+                .filter {
+                    val sig = try { "${it.requireBean().serverAddress}:${it.requireBean().serverPort}" } catch (e: Exception) { it.id.toString() }
+                    !survivingSignatures.contains(sig)
+                }
 
             if (config.strictWhitelistMode) {
                 onProgress(AutoPilotProgress("ФИЛЬТР", 0, uniqueProxies.size, "Ищем прокси..."))
@@ -343,11 +361,12 @@ class AutoPilotEngine(
         val done = AtomicInteger(0)
 
         val concurrentThreads = DataStore.connectionTestConcurrent.coerceAtMost(3)
+        val testUrl = config.testUrl.ifBlank { DataStore.connectionTestURL }
 
         coroutineScope {
             repeat(concurrentThreads) {
                 launch(Dispatchers.IO) {
-                    val ut = UrlTest()
+                    val ut = UrlTest(testUrl)
                     while (isActive) {
                         if (shouldStop()) break
                         val p = queue.poll() ?: break
@@ -392,7 +411,7 @@ class AutoPilotEngine(
         phaseName: String = "ТЕСТ"
     ): List<ProxyEntity> {
         val good = mutableListOf<ProxyEntity>()
-        val testUrl = DataStore.connectionTestURL
+        val testUrl = config.testUrl.ifBlank { DataStore.connectionTestURL }
         val protocolName = if (testUrl.startsWith("https://")) "HTTPS" else "HTTP"
 
         for (i in 0 until maxToTest) {
@@ -408,7 +427,7 @@ class AutoPilotEngine(
 
                     // УДАР 1: Прогрев
                     val warmupMs: Int = try {
-                        withTimeout(3000L) { UrlTest().doTest(c) }.toInt()
+                        withTimeout(3000L) { UrlTest(testUrl).doTest(c) }.toInt()
                     } catch (e: Exception) { -1 }
 
                     if (warmupMs <= 0) {
@@ -431,7 +450,7 @@ class AutoPilotEngine(
 
                     // УДАР 2: Контрольный замер
                     val finalMs: Int = withTimeout(config.maxLatencyMs + 1000L) {
-                        UrlTest().doTest(c)
+                        UrlTest(testUrl).doTest(c)
                     }.toInt()
 
                     if (finalMs <= 15) {

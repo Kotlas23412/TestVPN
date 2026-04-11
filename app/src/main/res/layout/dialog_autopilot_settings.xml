@@ -48,11 +48,56 @@
                 android:text="3000" />
         </com.google.android.material.textfield.TextInputLayout>
 
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:hint="Test URL (AutoPilot)">
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/ap_test_url"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="textUri" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <CheckBox
+            android:id="@+id/ap_protocol_all"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="Проверять все протоколы"
+            android:checked="true" />
+
+        <LinearLayout
+            android:id="@+id/ap_protocol_box"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <CheckBox
+                android:id="@+id/ap_protocol_vless"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="VLESS" />
+
+            <CheckBox
+                android:id="@+id/ap_protocol_ss"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="SS" />
+
+            <CheckBox
+                android:id="@+id/ap_protocol_trojan"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="TROJAN" />
+        </LinearLayout>
+
         <CheckBox
             android:id="@+id/ap_combine"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="8dp"
             android:text="Объединить все группы в один экспорт"
             android:checked="true" />
 
