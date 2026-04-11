@@ -109,6 +109,9 @@
                 android:id="@+id/action_subscription_auto_https_cleanup"
                 android:title="@string/subscription_auto_https_cleanup" />
             <item
+                android:id="@+id/action_subscription_manual_test_cleanup"
+                android:title="@string/subscription_manual_test_cleanup" />
+            <item
                 android:id="@+id/action_github_export_selected"
                 android:title="@string/github_export_selected" />
             <item
