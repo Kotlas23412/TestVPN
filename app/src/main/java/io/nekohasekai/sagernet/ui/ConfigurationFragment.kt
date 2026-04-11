@@ -492,6 +492,8 @@ class ConfigurationFragment @JvmOverloads constructor(
             R.id.action_subscription_manual_test_cleanup -> runSubscriptionManualTestCleanup()
 
             // 7, 8. Ручные экспорты
+            R.id.action_github_export_auto_url_test -> runGithubAutoExport(useHttpsTest = false)
+            R.id.action_github_export_auto_https_test -> runGithubAutoExport(useHttpsTest = true)
             R.id.action_github_export_selected -> runGithubExportSelected()
             R.id.action_github_export_country -> runGithubExportByCountry()
             R.id.action_protocol_priority -> showProtocolPriorityDialog(DataStore.currentGroupId())
@@ -641,7 +643,7 @@ class ConfigurationFragment @JvmOverloads constructor(
                         }
                     }
                     return@filter false
-                }
+                }.sortedBy { it.userOrder }
                 test.proxyN = profilesList.size
                 val profiles = ConcurrentLinkedQueue(profilesList)
                 repeat(DataStore.connectionTestConcurrent) {
@@ -783,7 +785,7 @@ class ConfigurationFragment @JvmOverloads constructor(
 
         val mainJob = runOnDefaultDispatcher {
             try {
-                val profilesList = SagerDatabase.proxyDao.getByGroup(group.id)
+                val profilesList = SagerDatabase.proxyDao.getByGroup(group.id).sortedBy { it.userOrder }
                 test.proxyN = profilesList.size
                 val profiles = ConcurrentLinkedQueue(profilesList)
 
@@ -865,7 +867,7 @@ class ConfigurationFragment @JvmOverloads constructor(
 
         val mainJob = runOnDefaultDispatcher {
             try {
-                val profilesList = SagerDatabase.proxyDao.getByGroup(group.id)
+                val profilesList = SagerDatabase.proxyDao.getByGroup(group.id).sortedBy { it.userOrder }
                 test.proxyN = profilesList.size
                 val profiles = ConcurrentLinkedQueue(profilesList)
                 repeat(DataStore.connectionTestConcurrent) {
@@ -986,7 +988,7 @@ class ConfigurationFragment @JvmOverloads constructor(
 
         val mainJob = runOnDefaultDispatcher {
             try {
-                val profilesList = SagerDatabase.proxyDao.getByGroup(group.id)
+                val profilesList = SagerDatabase.proxyDao.getByGroup(group.id).sortedBy { it.userOrder }
                 test.proxyN = profilesList.size
                 var deletedCount = 0
 
@@ -1074,6 +1076,21 @@ class ConfigurationFragment @JvmOverloads constructor(
             if (dialog.isShowing) dialog.dismiss()
             runOnDefaultDispatcher {
                 mainJob.cancel()
+                withContext(NonCancellable) {
+                    onMainDispatcher {
+                        DataStore.selectedProxy = oldSelected
+                        ProfileManager.postUpdate(oldSelected)
+                        if (wasRunning) {
+                            if (DataStore.serviceState.canStop) {
+                                SagerNet.reloadService()
+                            } else {
+                                SagerNet.startService()
+                            }
+                        } else if (DataStore.serviceState.started) {
+                            SagerNet.stopService()
+                        }
+                    }
+                }
                 GroupManager.postReload(group.id)
                 DataStore.runningTest = false
             }
@@ -1108,7 +1125,7 @@ class ConfigurationFragment @JvmOverloads constructor(
 
         val mainJob = runOnDefaultDispatcher {
             try {
-                val profilesList = SagerDatabase.proxyDao.getByGroup(group.id)
+                val profilesList = SagerDatabase.proxyDao.getByGroup(group.id).sortedBy { it.userOrder }
                 test.proxyN = profilesList.size
                 val deletedProfiles = mutableListOf<ProxyEntity>()
 
