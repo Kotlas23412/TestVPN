@@ -514,6 +514,7 @@
     <string name="please_update_force">Your APP is too old (%s). And has been stopped working at %s.
         Please update!</string>
     <string name="connection_test_delete_unavailable">Clear unavailable</string>
+    <string name="subscription_auto_https_cleanup">Subscription auto HTTPS check + cleanup</string>
     <string name="move">Move</string>
     <string name="exe_prefer_provider">Plugin Preferred Provider</string>
     <string name="create_shortcut">Create Shortcut</string>
