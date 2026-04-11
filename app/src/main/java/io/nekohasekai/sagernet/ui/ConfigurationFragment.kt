@@ -96,7 +96,6 @@ import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -633,7 +632,7 @@ class ConfigurationFragment @JvmOverloads constructor(
                 val profiles = ConcurrentLinkedQueue(profilesList)
                 repeat(DataStore.connectionTestConcurrent) {
                     testJobs.add(launch(Dispatchers.IO) {
-                        while (isActive) {
+                        while (true) {
                             val profile = profiles.poll() ?: break
 
                             profile.status = 0
@@ -648,7 +647,6 @@ class ConfigurationFragment @JvmOverloads constructor(
                                 } catch (ignored: UnknownHostException) {
                                 }
                             }
-                            if (!isActive) break
                             if (!address.isIpAddress()) {
                                 profile.status = 2
                                 profile.error = app.getString(R.string.connection_test_domain_not_found)
@@ -671,7 +669,6 @@ class ConfigurationFragment @JvmOverloads constructor(
                                                 address, profile.requireBean().serverPort
                                             ), 3000
                                         )
-                                        if (!isActive) break
                                         profile.status = 1
                                         profile.ping = (SystemClock.elapsedRealtime() - start).toInt()
                                         test.update(profile)
@@ -680,7 +677,6 @@ class ConfigurationFragment @JvmOverloads constructor(
                                     }
                                 }
                             } catch (e: Exception) {
-                                if (!isActive) break
                                 val message = e.readableMessage
 
                                 if (icmpPing) {
@@ -777,7 +773,7 @@ class ConfigurationFragment @JvmOverloads constructor(
                 repeat(DataStore.connectionTestConcurrent) {
                     testJobs.add(launch(Dispatchers.IO) {
                         val urlTest = UrlTest() // note: this is NOT in bg process
-                        while (isActive) {
+                        while (true) {
                             val profile = profiles.poll() ?: break
                             profile.status = 0
 
@@ -857,7 +853,7 @@ class ConfigurationFragment @JvmOverloads constructor(
                 val profiles = ConcurrentLinkedQueue(profilesList)
                 repeat(DataStore.connectionTestConcurrent) {
                     testJobs.add(launch(Dispatchers.IO) {
-                        while (isActive) {
+                        while (true) {
                             val profile = profiles.poll() ?: break
                             profile.status = 0
 
@@ -925,6 +921,236 @@ class ConfigurationFragment @JvmOverloads constructor(
             test.notification = ConnectionTestNotification(
                 requireContext(),
                 "[${group.displayName()}] ${getString(R.string.full_https_test)}"
+            )
+            dialog.hide()
+        }
+    }
+
+    @OptIn(DelicateCoroutinesApi::class)
+    fun runSubscriptionAutoCleanupFlow() {
+        if (DataStore.runningTest) {
+            snackbar("Тестирование уже запущено! Дождитесь окончания.").show()
+            return
+        }
+
+        val group = DataStore.currentGroup()
+        if (group.type != GroupType.SUBSCRIPTION) {
+            snackbar(getString(R.string.group_not_subscription)).show()
+            return
+        }
+        DataStore.runningTest = true
+
+        val test = TestDialog()
+        val dialog = test.builder.show()
+        test.proxyN = 0
+
+        val mainJob = runOnDefaultDispatcher {
+            try {
+                val profilesList = SagerDatabase.proxyDao.getByGroup(group.id)
+                test.proxyN = profilesList.size
+                val deletedProfiles = mutableListOf<ProxyEntity>()
+
+                for (profile in profilesList) {
+                    profile.status = 0
+
+                    try {
+                        val result = FullTestInstance(
+                            profile = profile,
+                            timeout = 15000,
+                            minOk = 2
+                        ).doTest()
+
+                        if (result.success) {
+                            profile.status = 1
+                            profile.ping = result.bestLatencyMs.toInt()
+                            profile.error = null
+                            ProfileManager.updateProfile(profile)
+                        } else {
+                            profile.status = 3
+                            profile.error = result.error ?: "HTTPS test failed"
+                            deletedProfiles += profile
+                            ProfileManager.deleteProfile(profile.groupId, profile.id)
+                        }
+                    } catch (e: PluginManager.PluginNotFoundException) {
+                        profile.status = 2
+                        profile.error = e.readableMessage
+                        deletedProfiles += profile
+                        ProfileManager.deleteProfile(profile.groupId, profile.id)
+                    } catch (e: Exception) {
+                        profile.status = 3
+                        profile.error = e.readableMessage
+                        deletedProfiles += profile
+                        ProfileManager.deleteProfile(profile.groupId, profile.id)
+                    }
+
+                    test.update(profile)
+                }
+
+                GroupManager.postReload(group.id)
+                DataStore.runningTest = false
+
+                onMainDispatcher {
+                    test.dialogStatus.set(2)
+                    if (dialog.isShowing) dialog.dismiss()
+                    snackbar(
+                        "Автопроверка подписки завершена. Удалено: ${deletedProfiles.size}, осталось: ${profilesList.size - deletedProfiles.size}"
+                    ).show()
+                }
+            } catch (e: Exception) {
+                Logs.w(e)
+                DataStore.runningTest = false
+                onMainDispatcher {
+                    if (dialog.isShowing) dialog.dismiss()
+                    snackbar("Ошибка автопроверки: ${e.readableMessage}").show()
+                }
+            }
+        }
+
+        test.cancel = {
+            test.dialogStatus.set(2)
+            if (dialog.isShowing) dialog.dismiss()
+            runOnDefaultDispatcher {
+                mainJob.cancel()
+                GroupManager.postReload(group.id)
+                DataStore.runningTest = false
+            }
+        }
+        test.minimize = {
+            test.dialogStatus.set(1)
+            test.notification = ConnectionTestNotification(
+                requireContext(),
+                "[${group.displayName()}] ${getString(R.string.subscription_auto_https_cleanup)}"
+            )
+            dialog.hide()
+        }
+    }
+
+    private suspend fun awaitServiceConnectedForManualCleanup(timeoutMs: Long): Boolean {
+        val start = SystemClock.elapsedRealtime()
+        while (SystemClock.elapsedRealtime() - start < timeoutMs) {
+            if (DataStore.serviceState.connected) return true
+            delay(250L)
+        }
+        return DataStore.serviceState.connected
+    }
+
+    @OptIn(DelicateCoroutinesApi::class)
+    fun runSubscriptionManualCleanupFlow() {
+        if (DataStore.runningTest) {
+            snackbar("Тестирование уже запущено! Дождитесь окончания.").show()
+            return
+        }
+
+        val group = DataStore.currentGroup()
+        if (group.type != GroupType.SUBSCRIPTION) {
+            snackbar(getString(R.string.group_not_subscription)).show()
+            return
+        }
+        DataStore.runningTest = true
+
+        val test = TestDialog()
+        val dialog = test.builder.show()
+        val oldSelected = DataStore.selectedProxy
+        val wasRunning = DataStore.serviceState.started
+
+        val mainJob = runOnDefaultDispatcher {
+            try {
+                val profilesList = SagerDatabase.proxyDao.getByGroup(group.id)
+                test.proxyN = profilesList.size
+                var deletedCount = 0
+
+                for (profile in profilesList) {
+                    profile.status = 0
+
+                    try {
+                        onMainDispatcher {
+                            DataStore.selectedProxy = profile.id
+                            ProfileManager.postUpdate(profile.id)
+                            if (DataStore.serviceState.canStop) {
+                                SagerNet.reloadService()
+                            } else {
+                                SagerNet.startService()
+                            }
+                        }
+
+                        val connected = awaitServiceConnectedForManualCleanup(20_000L)
+                        if (!connected) {
+                            throw IllegalStateException("Сервис не подключился")
+                        }
+
+                        val result = FullTestInstance(
+                            profile = profile,
+                            timeout = 15000,
+                            minOk = 2
+                        ).doTest()
+
+                        if (result.success) {
+                            profile.status = 1
+                            profile.ping = result.bestLatencyMs.toInt()
+                            profile.error = null
+                            ProfileManager.updateProfile(profile)
+                        } else {
+                            profile.status = 3
+                            profile.error = result.error ?: "HTTPS test failed"
+                            ProfileManager.deleteProfile(profile.groupId, profile.id)
+                            deletedCount++
+                        }
+                    } catch (e: Exception) {
+                        profile.status = 3
+                        profile.error = e.readableMessage
+                        ProfileManager.deleteProfile(profile.groupId, profile.id)
+                        deletedCount++
+                    }
+
+                    test.update(profile)
+                }
+
+                onMainDispatcher {
+                    DataStore.selectedProxy = oldSelected
+                    ProfileManager.postUpdate(oldSelected)
+                    if (wasRunning) {
+                        if (DataStore.serviceState.canStop) {
+                            SagerNet.reloadService()
+                        } else {
+                            SagerNet.startService()
+                        }
+                    } else if (DataStore.serviceState.started) {
+                        SagerNet.stopService()
+                    }
+                }
+
+                GroupManager.postReload(group.id)
+                DataStore.runningTest = false
+
+                onMainDispatcher {
+                    test.dialogStatus.set(2)
+                    if (dialog.isShowing) dialog.dismiss()
+                    snackbar("Ручная автопроверка завершена. Удалено: $deletedCount").show()
+                }
+            } catch (e: Exception) {
+                Logs.w(e)
+                DataStore.runningTest = false
+                onMainDispatcher {
+                    if (dialog.isShowing) dialog.dismiss()
+                    snackbar("Ошибка ручной автопроверки: ${e.readableMessage}").show()
+                }
+            }
+        }
+
+        test.cancel = {
+            test.dialogStatus.set(2)
+            if (dialog.isShowing) dialog.dismiss()
+            runOnDefaultDispatcher {
+                mainJob.cancel()
+                GroupManager.postReload(group.id)
+                DataStore.runningTest = false
+            }
+        }
+        test.minimize = {
+            test.dialogStatus.set(1)
+            test.notification = ConnectionTestNotification(
+                requireContext(),
+                "[${group.displayName()}] ${getString(R.string.subscription_manual_test_cleanup)}"
             )
             dialog.hide()
         }
@@ -2838,7 +3064,7 @@ class ConfigurationFragment @JvmOverloads constructor(
                     testJobs.add(launch(Dispatchers.IO) {
                         val urlTest = if (!useHttpsTest) UrlTest() else null
 
-                        while (isActive) {
+                        while (true) {
                             val profile = profiles.poll() ?: break
                             profile.status = 0
 
