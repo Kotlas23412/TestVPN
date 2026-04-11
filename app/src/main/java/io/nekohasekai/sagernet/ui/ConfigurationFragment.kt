@@ -949,6 +949,12 @@ class ConfigurationFragment @JvmOverloads constructor(
         return name?.trim() == autoPilotBestName || displayName().trim() == autoPilotBestName
     }
 
+    private fun ProxyGroup.supportsSubscriptionAutoCheck(): Boolean {
+        if (type == GroupType.SUBSCRIPTION) return true
+        val autoPilotBestName = "🚀 AutoPilot Best"
+        return name?.trim() == autoPilotBestName || displayName().trim() == autoPilotBestName
+    }
+
     private suspend fun waitForServiceConnected(timeoutMs: Long): Boolean {
         val start = SystemClock.elapsedRealtime()
         while (SystemClock.elapsedRealtime() - start < timeoutMs) {
