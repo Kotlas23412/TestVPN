@@ -119,6 +119,10 @@
                 android:id="@+id/action_connection_test_delete_unavailable"
                 android:title="@string/connection_test_delete_unavailable" />
             <item
+                android:id="@+id/action_protocol_priority"
+                android:title="@string/group_protocol_priority_title"
+                android:visible="false" />
+            <item
                 android:id="@+id/action_order"
                 android:title="@string/group_order">
                 <menu>
