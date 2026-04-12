@@ -2687,11 +2687,11 @@ class ConfigurationFragment @JvmOverloads constructor(
             val bestGroup = targetGroup ?: return "Не удалось создать группу AutoPilot Best"
             val groupId = bestGroup.id
 
-            SagerDatabase.proxyDao.deleteByGroup(groupId)
+            val startOrder = SagerDatabase.proxyDao.nextOrder(groupId)?.toInt() ?: 0
 
             for ((index, proxy) in list.withIndex()) {
                 val created = ProfileManager.createProfile(groupId, proxy.requireBean())
-                created.userOrder = index.toLong()
+                created.userOrder = (startOrder + index).toLong()
                 created.ping = proxy.ping
                 created.status = proxy.status
                 created.error = proxy.error
