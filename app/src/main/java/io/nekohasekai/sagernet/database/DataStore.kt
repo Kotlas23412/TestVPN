@@ -363,4 +363,28 @@ object DataStore : OnPreferenceDataStoreChangeListener {
             configurationStore.putString(key, value)
         }
     }
+
+    fun getGroupSubscriptionProtocolFilter(groupId: Long): Set<String> {
+        if (groupId <= 0L) return emptySet()
+        return configurationStore.getString("group_subscription_protocol_filter_$groupId")
+            ?.split(",")
+            ?.map { it.trim().lowercase() }
+            ?.filter { it.isNotEmpty() }
+            ?.toSet()
+            ?: emptySet()
+    }
+
+    fun setGroupSubscriptionProtocolFilter(groupId: Long, protocols: Set<String>) {
+        if (groupId <= 0L) return
+        val key = "group_subscription_protocol_filter_$groupId"
+        val value = protocols.map { it.trim().lowercase() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+            .sorted()
+        if (value.isEmpty()) {
+            configurationStore.putString(key, null)
+        } else {
+            configurationStore.putString(key, value.joinToString(","))
+        }
+    }
 }

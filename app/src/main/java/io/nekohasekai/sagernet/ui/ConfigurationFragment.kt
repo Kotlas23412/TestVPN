@@ -496,6 +496,7 @@ class ConfigurationFragment @JvmOverloads constructor(
             R.id.action_github_export_country -> runGithubExportByCountry()
             R.id.action_autopilot_settings -> showAutoPilotSettingsDialog()
             R.id.action_protocol_priority -> showProtocolPriorityDialog(DataStore.currentGroupId())
+            R.id.action_subscription_protocol_filter -> showSubscriptionProtocolFilterDialog(DataStore.currentGroupId())
             // 9. Менеджер GitHub
             R.id.action_github_manager -> startActivity(Intent(requireActivity(), GitHubManagerActivity::class.java))
 
@@ -2417,6 +2418,44 @@ class ConfigurationFragment @JvmOverloads constructor(
                     .show()
             }
         }
+    }
+
+    private fun showSubscriptionProtocolFilterDialog(groupId: Long) {
+        if (groupId <= 0L) return
+        val protocolKeys = listOf("vless", "vmess", "trojan", "ss", "hysteria", "tuic", "anytls")
+        val protocolLabels = listOf("VLESS", "VMESS", "TROJAN", "SS", "HYSTERIA", "TUIC", "ANYTLS")
+        val checked = BooleanArray(protocolKeys.size)
+        val current = DataStore.getGroupSubscriptionProtocolFilter(groupId)
+        if (current.isEmpty()) {
+            checked.fill(true)
+        } else {
+            protocolKeys.forEachIndexed { index, key ->
+                checked[index] = current.contains(key)
+            }
+        }
+
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.subscription_protocol_filter_title)
+            .setMultiChoiceItems(protocolLabels.toTypedArray(), checked) { _, which, isChecked ->
+                checked[which] = isChecked
+            }
+            .setNeutralButton(R.string.clear) { _, _ ->
+                DataStore.setGroupSubscriptionProtocolFilter(groupId, emptySet())
+                snackbar(getString(R.string.subscription_protocol_filter_saved, "ALL")).show()
+            }
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                val selected = protocolKeys.filterIndexed { index, _ -> checked[index] }.toSet()
+                if (selected.isEmpty()) {
+                    snackbar(getString(R.string.subscription_protocol_filter_empty)).show()
+                    return@setPositiveButton
+                }
+                DataStore.setGroupSubscriptionProtocolFilter(groupId, selected)
+                val selectedText = protocolKeys.filterIndexed { index, _ -> checked[index] }
+                    .joinToString(", ") { it.uppercase() }
+                snackbar(getString(R.string.subscription_protocol_filter_saved, selectedText)).show()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     fun runGithubExportByCountry() {

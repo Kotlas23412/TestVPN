@@ -148,6 +148,9 @@
                     </group>
                 </menu>
             </item>
+            <item
+                android:id="@+id/action_subscription_protocol_filter"
+                android:title="@string/subscription_protocol_filter" />
         </menu>
     </item>
 
