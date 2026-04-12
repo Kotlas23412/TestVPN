@@ -2286,8 +2286,44 @@ class ConfigurationFragment @JvmOverloads constructor(
                 DataStore.autoPilotProtocols = protocolSelection
                 DataStore.autoPilotCombine = combine.isChecked
                 DataStore.autoPilotStrictWhitelist = strictWhitelist.isChecked
-                AutoPilotService.start(requireContext())
-                snackbar("AutoPilot запущен").show()
+                runOnDefaultDispatcher {
+                    val groups = SagerDatabase.groupDao.allGroups()
+                        .filter { it.type == GroupType.SUBSCRIPTION }
+                        .sortedBy { it.displayName().lowercase() }
+                    val selectedIds = DataStore.autoPilotGroupIds.split(",")
+                        .mapNotNull { it.toLongOrNull() }
+                        .toSet()
+
+                    onMainDispatcher {
+                        if (groups.isEmpty()) {
+                            snackbar("Нет подписок для проверки").show()
+                            return@onMainDispatcher
+                        }
+
+                        val labels = groups.map { it.displayName() }.toTypedArray()
+                        val checked = BooleanArray(groups.size) { index ->
+                            selectedIds.contains(groups[index].id)
+                        }
+
+                        MaterialAlertDialogBuilder(requireContext())
+                            .setTitle("Какие подписки проверять?")
+                            .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
+                                checked[which] = isChecked
+                            }
+                            .setPositiveButton("Запустить") { _, _ ->
+                                val selected = groups.filterIndexed { index, _ -> checked[index] }
+                                if (selected.isEmpty()) {
+                                    snackbar("Выберите хотя бы одну подписку").show()
+                                    return@setPositiveButton
+                                }
+                                DataStore.autoPilotGroupIds = selected.joinToString(",") { it.id.toString() }
+                                AutoPilotService.start(requireContext())
+                                snackbar("AutoPilot запущен").show()
+                            }
+                            .setNegativeButton(android.R.string.cancel, null)
+                            .show()
+                    }
+                }
             }
             .setNeutralButton("Остановить") { _, _ ->
                 AutoPilotService.stop(requireContext())

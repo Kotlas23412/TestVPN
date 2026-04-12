@@ -121,13 +121,14 @@ class AutoPilotEngine(
             // === 1. ЭТАП РЕВИЗИИ ===
             if (targetGroup != null) {
                 val currentBest = SagerDatabase.proxyDao.getByGroup(targetGroup.id)
-                if (currentBest.isNotEmpty()) {
-                    onProgress(AutoPilotProgress("РЕВИЗИЯ", 0, currentBest.size, "Строгий тест серверов..."))
+                val currentBestFiltered = currentBest.filter { isProtocolAllowed(it) }
+                if (currentBestFiltered.isNotEmpty()) {
+                    onProgress(AutoPilotProgress("РЕВИЗИЯ", 0, currentBestFiltered.size, "Строгий тест серверов..."))
 
-                    val verifiedOld = phaseStrictCoreTest(currentBest, currentBest.size, "РЕВИЗИЯ")
+                    val verifiedOld = phaseStrictCoreTest(currentBestFiltered, currentBestFiltered.size, "РЕВИЗИЯ")
                     survivingProxies.addAll(verifiedOld)
 
-                    val deadProxies = currentBest.filter { old -> verifiedOld.none { it.id == old.id } }
+                    val deadProxies = currentBestFiltered.filter { old -> verifiedOld.none { it.id == old.id } }
                     deadCount = deadProxies.size
 
                     if (deadProxies.isNotEmpty()) {
@@ -203,6 +204,18 @@ class AutoPilotEngine(
                     val sig = try { "${it.requireBean().serverAddress}:${it.requireBean().serverPort}" } catch (e: Exception) { it.id.toString() }
                     !survivingSignatures.contains(sig)
                 }
+
+            if (uniqueProxies.isEmpty() && survivingProxies.isNotEmpty()) {
+                return@withContext AutoPilotResult(
+                    success = true,
+                    message = "Новых серверов по выбранным протоколам не найдено.\nСохранено рабочих: ${survivingProxies.size}",
+                    exportedCount = survivingProxies.size,
+                    deadCount = deadCount,
+                    exportedIds = survivingProxies.map { it.id },
+                    isSkipped = true,
+                    aliveCount = survivingProxies.size
+                )
+            }
 
             if (config.strictWhitelistMode) {
                 onProgress(AutoPilotProgress("ФИЛЬТР", 0, uniqueProxies.size, "Ищем прокси..."))
