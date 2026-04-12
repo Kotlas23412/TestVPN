@@ -2051,6 +2051,15 @@ class ConfigurationFragment @JvmOverloads constructor(
         }
     }
 
+    private fun sendProxyToAutoPilotBest(proxy: ProxyEntity) {
+        runOnDefaultDispatcher {
+            val syncError = syncExportToAutoPilotBestGroup(listOf(proxy))
+            onMainDispatcher {
+                snackbar(syncError ?: "Прокси отправлен в 🚀 AutoPilot Best").show()
+            }
+        }
+    }
+
     private val exportConfig =
         registerForActivityResult(ActivityResultContracts.CreateDocument()) { data ->
             if (data != null) {
