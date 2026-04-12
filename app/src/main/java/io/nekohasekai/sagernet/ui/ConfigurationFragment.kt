@@ -497,8 +497,6 @@ class ConfigurationFragment @JvmOverloads constructor(
             R.id.action_autopilot_settings -> showAutoPilotSettingsDialog()
             R.id.action_protocol_priority -> showProtocolPriorityDialog(DataStore.currentGroupId())
             R.id.action_subscription_protocol_filter -> showSubscriptionProtocolFilterDialog(DataStore.currentGroupId())
-            // 9. Менеджер GitHub
-            R.id.action_github_manager -> startActivity(Intent(requireActivity(), GitHubManagerActivity::class.java))
 
             // 15. Clear unavailable
             R.id.action_connection_test_delete_unavailable -> {
@@ -2687,11 +2685,11 @@ class ConfigurationFragment @JvmOverloads constructor(
             val bestGroup = targetGroup ?: return "Не удалось создать группу AutoPilot Best"
             val groupId = bestGroup.id
 
-            SagerDatabase.proxyDao.deleteByGroup(groupId)
+            val startOrder = SagerDatabase.proxyDao.nextOrder(groupId)?.toInt() ?: 0
 
             for ((index, proxy) in list.withIndex()) {
                 val created = ProfileManager.createProfile(groupId, proxy.requireBean())
-                created.userOrder = index.toLong()
+                created.userOrder = (startOrder + index).toLong()
                 created.ping = proxy.ping
                 created.status = proxy.status
                 created.error = proxy.error
