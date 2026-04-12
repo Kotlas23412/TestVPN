@@ -497,8 +497,6 @@ class ConfigurationFragment @JvmOverloads constructor(
             R.id.action_autopilot_settings -> showAutoPilotSettingsDialog()
             R.id.action_protocol_priority -> showProtocolPriorityDialog(DataStore.currentGroupId())
             R.id.action_subscription_protocol_filter -> showSubscriptionProtocolFilterDialog(DataStore.currentGroupId())
-            // 9. Менеджер GitHub
-            R.id.action_github_manager -> startActivity(Intent(requireActivity(), GitHubManagerActivity::class.java))
 
             // 15. Clear unavailable
             R.id.action_connection_test_delete_unavailable -> {

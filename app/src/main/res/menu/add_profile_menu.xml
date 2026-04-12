@@ -118,10 +118,6 @@
                 android:id="@+id/action_autopilot_settings"
                 android:title="🤖 AutoPilot" />
             <item
-                android:id="@+id/action_github_manager"
-                android:title="📁 Менеджер GitHub"
-                app:showAsAction="never" />
-            <item
                 android:id="@+id/action_connection_test_delete_unavailable"
                 android:title="@string/connection_test_delete_unavailable" />
             <item
