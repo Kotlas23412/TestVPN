@@ -96,10 +96,12 @@ import io.nekohasekai.sagernet.widget.UndoSnackbarManager
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import moe.matsuri.nb4a.Protocols
@@ -1119,7 +1121,8 @@ class ConfigurationFragment @JvmOverloads constructor(
 
         val test = TestDialog()
         val dialog = test.builder.show()
-        test.proxyN = 0
+        val oldSelected = DataStore.selectedProxy
+        val wasRunning = DataStore.serviceState.started
 
         val mainJob = runOnDefaultDispatcher {
             try {
@@ -1140,13 +1143,28 @@ class ConfigurationFragment @JvmOverloads constructor(
                     .sortedBy { it.userOrder }
                     .filter { useAllProtocols || allowedProtocols.contains(protocolKey(it)) }
                 test.proxyN = profilesList.size
-                val deletedProfiles = mutableListOf<ProxyEntity>()
+                var deletedCount = 0
 
                 for (profile in profilesList) {
                     if (!isActive) break
                     profile.status = 0
 
                     try {
+                        onMainDispatcher {
+                            DataStore.selectedProxy = profile.id
+                            ProfileManager.postUpdate(profile.id)
+                            if (DataStore.serviceState.canStop) {
+                                SagerNet.reloadService()
+                            } else {
+                                SagerNet.startService()
+                            }
+                        }
+
+                        val connected = waitForServiceConnected(20_000L)
+                        if (!connected) {
+                            throw IllegalStateException("VPN не подключился")
+                        }
+
                         val result = FullTestInstance(
                             profile = profile,
                             timeout = 15000,
@@ -1161,22 +1179,36 @@ class ConfigurationFragment @JvmOverloads constructor(
                         } else {
                             profile.status = 3
                             profile.error = result.error ?: "HTTPS test failed"
-                            deletedProfiles += profile
                             ProfileManager.deleteProfile(profile.groupId, profile.id)
+                            deletedCount++
                         }
                     } catch (e: PluginManager.PluginNotFoundException) {
                         profile.status = 2
                         profile.error = e.readableMessage
-                        deletedProfiles += profile
                         ProfileManager.deleteProfile(profile.groupId, profile.id)
+                        deletedCount++
                     } catch (e: Exception) {
                         profile.status = 3
                         profile.error = e.readableMessage
-                        deletedProfiles += profile
                         ProfileManager.deleteProfile(profile.groupId, profile.id)
+                        deletedCount++
                     }
 
                     test.update(profile)
+                }
+
+                onMainDispatcher {
+                    DataStore.selectedProxy = oldSelected
+                    ProfileManager.postUpdate(oldSelected)
+                    if (wasRunning) {
+                        if (DataStore.serviceState.canStop) {
+                            SagerNet.reloadService()
+                        } else {
+                            SagerNet.startService()
+                        }
+                    } else if (DataStore.serviceState.started) {
+                        SagerNet.stopService()
+                    }
                 }
 
                 GroupManager.postReload(group.id)
@@ -1186,13 +1218,24 @@ class ConfigurationFragment @JvmOverloads constructor(
                     test.dialogStatus.set(2)
                     if (dialog.isShowing) dialog.dismiss()
                     snackbar(
-                        "Автопроверка подписки завершена. Удалено: ${deletedProfiles.size}, осталось: ${profilesList.size - deletedProfiles.size}"
+                        "Автопроверка подписки завершена. Удалено: $deletedCount, осталось: ${profilesList.size - deletedCount}"
                     ).show()
                 }
             } catch (e: Exception) {
                 Logs.w(e)
                 DataStore.runningTest = false
                 onMainDispatcher {
+                    DataStore.selectedProxy = oldSelected
+                    ProfileManager.postUpdate(oldSelected)
+                    if (wasRunning) {
+                        if (DataStore.serviceState.canStop) {
+                            SagerNet.reloadService()
+                        } else {
+                            SagerNet.startService()
+                        }
+                    } else if (DataStore.serviceState.started) {
+                        SagerNet.stopService()
+                    }
                     if (dialog.isShowing) dialog.dismiss()
                     snackbar("Ошибка автопроверки: ${e.readableMessage}").show()
                 }
@@ -1204,6 +1247,21 @@ class ConfigurationFragment @JvmOverloads constructor(
             if (dialog.isShowing) dialog.dismiss()
             runOnDefaultDispatcher {
                 mainJob.cancel()
+                withContext(NonCancellable) {
+                    onMainDispatcher {
+                        DataStore.selectedProxy = oldSelected
+                        ProfileManager.postUpdate(oldSelected)
+                        if (wasRunning) {
+                            if (DataStore.serviceState.canStop) {
+                                SagerNet.reloadService()
+                            } else {
+                                SagerNet.startService()
+                            }
+                        } else if (DataStore.serviceState.started) {
+                            SagerNet.stopService()
+                        }
+                    }
+                }
                 GroupManager.postReload(group.id)
                 DataStore.runningTest = false
             }
