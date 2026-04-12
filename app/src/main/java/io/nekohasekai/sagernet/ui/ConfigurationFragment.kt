@@ -951,20 +951,25 @@ class ConfigurationFragment @JvmOverloads constructor(
         return name?.trim() == autoPilotBestName || displayName().trim() == autoPilotBestName
     }
 
-    private fun ProxyGroup.supportsSubscriptionAutoCheck(): Boolean {
-        if (type == GroupType.SUBSCRIPTION) return true
-        val autoPilotBestName = "🚀 AutoPilot Best"
-        return name?.trim() == autoPilotBestName || displayName().trim() == autoPilotBestName
-    }
-
-    private suspend fun waitForServiceConnected(timeoutMs: Long): Boolean {
+    private suspend fun waitForServiceConnected(timeoutMs: Long, expectedProfileId: Long? = null): Boolean {
         val start = SystemClock.elapsedRealtime()
+        var stableSince = 0L
         while (SystemClock.elapsedRealtime() - start < timeoutMs) {
-            if (DataStore.serviceState.connected) return true
+            val connected = DataStore.serviceState.connected
+            val profileMatched = expectedProfileId == null || DataStore.currentProfile == expectedProfileId
+            if (connected && profileMatched) {
+                if (stableSince == 0L) {
+                    stableSince = SystemClock.elapsedRealtime()
+                }
+                if (SystemClock.elapsedRealtime() - stableSince >= 1000L) return true
+            } else {
+                stableSince = 0L
+            }
             if (!isActive) return false
             delay(250L)
         }
-        return DataStore.serviceState.connected
+        return DataStore.serviceState.connected &&
+            (expectedProfileId == null || DataStore.currentProfile == expectedProfileId)
     }
 
     @OptIn(DelicateCoroutinesApi::class)
@@ -1007,7 +1012,7 @@ class ConfigurationFragment @JvmOverloads constructor(
                             }
                         }
 
-                        val connected = waitForServiceConnected(20_000L)
+                        val connected = waitForServiceConnected(20_000L, profile.id)
                         if (!connected) {
                             throw IllegalStateException("Сервис не подключился")
                         }
@@ -1160,7 +1165,7 @@ class ConfigurationFragment @JvmOverloads constructor(
                             }
                         }
 
-                        val connected = waitForServiceConnected(20_000L)
+                        val connected = waitForServiceConnected(20_000L, profile.id)
                         if (!connected) {
                             throw IllegalStateException("VPN не подключился")
                         }
