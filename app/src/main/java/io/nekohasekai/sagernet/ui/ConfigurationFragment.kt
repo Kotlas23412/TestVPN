@@ -96,12 +96,14 @@ import io.nekohasekai.sagernet.widget.UndoSnackbarManager
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import moe.matsuri.nb4a.Protocols
 import moe.matsuri.nb4a.Protocols.getProtocolColor
 import moe.matsuri.nb4a.proxy.anytls.AnyTLSSettingsActivity
@@ -117,7 +119,6 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.ZipInputStream
 import io.nekohasekai.sagernet.bg.proto.FullTestInstance
-import io.nekohasekai.sagernet.bg.proto.FullTestResult
 import io.nekohasekai.sagernet.utils.GitHubExporter
 
 private fun applyGroupOrder(proxies: List<ProxyEntity>, order: Int, groupId: Long): List<ProxyEntity> {
@@ -943,12 +944,6 @@ class ConfigurationFragment @JvmOverloads constructor(
             )
             dialog.hide()
         }
-    }
-
-    private fun ProxyGroup.supportsSubscriptionAutoCheck(): Boolean {
-        if (type == GroupType.SUBSCRIPTION) return true
-        val autoPilotBestName = "🚀 AutoPilot Best"
-        return name?.trim() == autoPilotBestName || displayName().trim() == autoPilotBestName
     }
 
     private fun ProxyGroup.supportsSubscriptionAutoCheck(): Boolean {
@@ -2037,8 +2032,21 @@ class ConfigurationFragment @JvmOverloads constructor(
                             }
                         }
                     }
+
+                    R.id.action_send_to_autopilot_best -> {
+                        sendProxyToAutoPilotBest(entity)
+                    }
                 }
                 return true
+            }
+        }
+    }
+
+    private fun sendProxyToAutoPilotBest(proxy: ProxyEntity) {
+        runOnDefaultDispatcher {
+            val syncError = syncExportToAutoPilotBestGroup(listOf(proxy))
+            onMainDispatcher {
+                snackbar(syncError ?: "Прокси отправлен в 🚀 AutoPilot Best").show()
             }
         }
     }
