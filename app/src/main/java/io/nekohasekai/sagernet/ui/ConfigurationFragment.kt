@@ -117,7 +117,6 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.ZipInputStream
 import io.nekohasekai.sagernet.bg.proto.FullTestInstance
-import io.nekohasekai.sagernet.bg.proto.FullTestResult
 import io.nekohasekai.sagernet.utils.GitHubExporter
 
 private fun applyGroupOrder(proxies: List<ProxyEntity>, order: Int, groupId: Long): List<ProxyEntity> {
@@ -2037,8 +2036,21 @@ class ConfigurationFragment @JvmOverloads constructor(
                             }
                         }
                     }
+
+                    R.id.action_send_to_autopilot_best -> {
+                        sendProxyToAutoPilotBest(entity)
+                    }
                 }
                 return true
+            }
+        }
+    }
+
+    private fun sendProxyToAutoPilotBest(proxy: ProxyEntity) {
+        runOnDefaultDispatcher {
+            val syncError = syncExportToAutoPilotBestGroup(listOf(proxy))
+            onMainDispatcher {
+                snackbar(syncError ?: "Прокси отправлен в 🚀 AutoPilot Best").show()
             }
         }
     }
