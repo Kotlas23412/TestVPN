@@ -407,6 +407,10 @@
     <string name="group_order_by_protocol">By Protocol</string>
     <string name="group_protocol_priority_title">Protocol priority</string>
     <string name="group_protocol_priority_empty">No protocols found</string>
+    <string name="subscription_protocol_filter">Subscription protocol filter</string>
+    <string name="subscription_protocol_filter_title">Select protocols for subscription</string>
+    <string name="subscription_protocol_filter_empty">Select at least one protocol</string>
+    <string name="subscription_protocol_filter_saved">Subscription filter: %s</string>
     <string name="plugin_exists_but_on_shit_system">Profile %s requires the %s plugin, but your
         proprietary equipment vendor (usually surveillance capital giants and malware maker)
         tampered with your Android, making the plugin unusable.</string>

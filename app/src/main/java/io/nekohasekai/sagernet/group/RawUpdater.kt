@@ -37,6 +37,18 @@ import androidx.core.net.toUri
 @Suppress("EXPERIMENTAL_API_USAGE")
 object RawUpdater : GroupUpdater() {
 
+    private fun protocolKey(bean: AbstractBean): String? {
+        return when (bean) {
+            is VMessBean -> if (bean.alterId == -1) "vless" else "vmess"
+            is TrojanBean -> "trojan"
+            is ShadowsocksBean -> "ss"
+            is HysteriaBean -> "hysteria"
+            is TuicBean -> "tuic"
+            is AnyTLSBean -> "anytls"
+            else -> null
+        }
+    }
+
     @SuppressLint("Recycle")
     override suspend fun doUpdate(
         proxyGroup: ProxyGroup,
@@ -84,6 +96,13 @@ object RawUpdater : GroupUpdater() {
                         proxyGroup.name = remoteName
                     }
                 }
+            }
+        }
+
+        val enabledProtocols = DataStore.getGroupSubscriptionProtocolFilter(proxyGroup.id)
+        if (enabledProtocols.isNotEmpty()) {
+            proxies = proxies.filter { proxy ->
+                protocolKey(proxy)?.let(enabledProtocols::contains) ?: true
             }
         }
 
