@@ -37,4 +37,7 @@
                 android:title="@string/action_export_file" />
         </menu>
     </item>
+    <item
+        android:id="@+id/action_send_to_autopilot_best"
+        android:title="@string/send_to_autopilot_best" />
 </menu>

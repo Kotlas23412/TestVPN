@@ -2037,6 +2037,15 @@ class ConfigurationFragment @JvmOverloads constructor(
                             }
                         }
                     }
+
+                    R.id.action_send_to_autopilot_best -> {
+                        runOnDefaultDispatcher {
+                            val syncError = syncExportToAutoPilotBestGroup(listOf(entity))
+                            onMainDispatcher {
+                                snackbar(syncError ?: "Прокси отправлен в 🚀 AutoPilot Best").show()
+                            }
+                        }
+                    }
                 }
                 return true
             }
