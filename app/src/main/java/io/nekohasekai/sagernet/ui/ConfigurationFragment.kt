@@ -2414,10 +2414,10 @@ class ConfigurationFragment @JvmOverloads constructor(
 
             val names = allProxies.map { proxy ->
                 val statusText = when (proxy.status) {
-                    1 -> "✅ ${proxy.ping} ms"
-                    0 -> "⏳ не тестировался"
-                    2, 3 -> "❌ ${proxy.error ?: "не работает"}"
-                    else -> "⚪ ${proxy.error ?: "без статуса"}"
+                    1 -> "✅ HTTPS: прошло (${proxy.ping} ms)"
+                    0 -> "⏳ HTTPS: не тестировался"
+                    2, 3 -> "❌ HTTPS: не прошло${proxy.error?.let { " ($it)" } ?: ""}"
+                    else -> "⚪ HTTPS: статус неизвестен"
                 }
                 "${proxy.displayName()}  [$statusText]"
             }.toTypedArray()
