@@ -436,8 +436,14 @@ class ConfigurationFragment @JvmOverloads constructor(
                 runOnDefaultDispatcher {
                     val group = SagerDatabase.groupDao.getById(DataStore.currentGroupId())
                     if (group != null && group.type == GroupType.SUBSCRIPTION) {
-                        io.nekohasekai.sagernet.group.GroupUpdater.startUpdate(group, false)
-                        onMainDispatcher { snackbar("Запущено обновление подписки...").show() }
+                        val updated = io.nekohasekai.sagernet.group.GroupUpdater.executeUpdate(group, false)
+                        if (updated && group.isAutoPilotBestGroup()) {
+                            val proxies = SagerDatabase.proxyDao.getByGroup(group.id).sortedBy { it.userOrder }
+                            val exportResult = io.nekohasekai.sagernet.utils.GitHubExporter.exportGroup("AutoPilot Best", proxies)
+                            onMainDispatcher { snackbar(exportResult.message).show() }
+                        } else if (updated) {
+                            onMainDispatcher { snackbar("Подписка обновлена").show() }
+                        }
                     } else {
                         onMainDispatcher { snackbar("Эта группа не является подпиской").show() }
                     }
@@ -947,6 +953,11 @@ class ConfigurationFragment @JvmOverloads constructor(
 
     private fun ProxyGroup.supportsSubscriptionAutoCheck(): Boolean {
         if (type == GroupType.SUBSCRIPTION) return true
+        val autoPilotBestName = "🚀 AutoPilot Best"
+        return name?.trim() == autoPilotBestName || displayName().trim() == autoPilotBestName
+    }
+
+    private fun ProxyGroup.isAutoPilotBestGroup(): Boolean {
         val autoPilotBestName = "🚀 AutoPilot Best"
         return name?.trim() == autoPilotBestName || displayName().trim() == autoPilotBestName
     }
